@@ -175,7 +175,11 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
             {picks.sources && picks.sources.length > 0 && (
               <div className="picks-sources">
                 <p className="picks-sources-label">
-                  Based on {picks.newsCount || picks.sources.length * 2}+ headlines from {picks.sources.length} sources:
+                  Based on {picks.newsCount}+ headlines
+                  {picks.feedCounts && (
+                    <span> — Finnhub: {picks.feedCounts.finnhub}, GNews: {picks.feedCounts.gnews}</span>
+                  )}
+                  {' '}from {picks.sources.length} sources:
                 </p>
                 <div className="picks-sources-list">
                   {picks.sources.map(s => (

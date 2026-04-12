@@ -125,6 +125,10 @@ export async function getDailyPicks(forceRefresh = false) {
   ])
 
   const { items: news, sources } = mergeAndDiversify(finnhubItems, gNewsItems)
+  const feedCounts = {
+    finnhub: finnhubItems.length,
+    gnews:   gNewsItems.length,
+  }
 
   if (news.length === 0) throw new Error('Could not load any news. Check your API keys.')
 
@@ -180,7 +184,7 @@ confidence must be exactly one of: "low", "medium", "high"`
 
   const raw    = message.content[0].text.trim()
   const json   = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')
-  const result = { ...JSON.parse(json), sources }
+  const result = { ...JSON.parse(json), sources, feedCounts }
 
   savePicksToCache(result)
   return { ...result, fromCache: false }
