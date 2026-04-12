@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Read(//Users/amitbhushan/.nvm/**)",
+      "Read(//Users/amitbhushan/**)",
+      "Read(//usr/local/**)",
+      "Bash(npm install:*)",
+      "Skill(claude-api)"
+    ]
+  }
+}
