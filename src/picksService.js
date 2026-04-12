@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const NEWSAPI_KEY = import.meta.env.VITE_NEWSAPI_KEY
+const GNEWS_KEY   = import.meta.env.VITE_GNEWS_KEY
 const CACHE_KEY      = 'daily_picks_v5'
 const CACHE_TTL      = 24 * 60 * 60 * 1000  // 24 hours
 const MAX_PER_SOURCE = 2  // cap per outlet so no single source dominates
@@ -46,21 +46,32 @@ async function fetchFinnhubNews() {
   }
 }
 
-// ── NewsAPI business headlines ─────────────────────────────────────────────────
-async function fetchNewsApiArticles() {
-  if (!NEWSAPI_KEY) return []
+// ── GNews business headlines ───────────────────────────────────────────────────
+// GNews works from the browser (no CORS restriction), free tier = 100 req/day.
+// We make two calls — top business headlines + stock market search — to maximise
+// coverage within the free quota.
+async function fetchGNewsArticles() {
+  if (!GNEWS_KEY) return []
   try {
-    // Top business headlines — broad and diverse
-    const url = `https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=50&apiKey=${NEWSAPI_KEY}`
-    const res  = await fetch(url)
-    const data = await res.json()
-    if (data.status !== 'ok' || !Array.isArray(data.articles)) return []
-    return data.articles.map(a => ({
+    const [headlinesRes, searchRes] = await Promise.all([
+      fetch(`https://gnews.io/api/v4/top-headlines?category=business&lang=en&max=10&token=${GNEWS_KEY}`),
+      fetch(`https://gnews.io/api/v4/search?q=stocks+earnings+market&lang=en&max=10&token=${GNEWS_KEY}`),
+    ])
+    const [headlinesData, searchData] = await Promise.all([
+      headlinesRes.json(),
+      searchRes.json(),
+    ])
+
+    const toItem = a => ({
       headline: a.title,
-      source:   a.source?.name || 'NewsAPI',
+      source:   a.source?.name || 'GNews',
       summary:  a.description ? a.description.slice(0, 180) : '',
       related:  '',
-    }))
+    })
+
+    const headlines = Array.isArray(headlinesData.articles) ? headlinesData.articles.map(toItem) : []
+    const search    = Array.isArray(searchData.articles)    ? searchData.articles.map(toItem)    : []
+    return [...headlines, ...search]
   } catch {
     return []
   }
@@ -108,12 +119,12 @@ export async function getDailyPicks(forceRefresh = false) {
   }
 
   // Fetch both sources in parallel
-  const [finnhubItems, newsApiItems] = await Promise.all([
+  const [finnhubItems, gNewsItems] = await Promise.all([
     fetchFinnhubNews(),
-    fetchNewsApiArticles(),
+    fetchGNewsArticles(),
   ])
 
-  const { items: news, sources } = mergeAndDiversify(finnhubItems, newsApiItems)
+  const { items: news, sources } = mergeAndDiversify(finnhubItems, gNewsItems)
 
   if (news.length === 0) throw new Error('Could not load any news. Check your API keys.')
 
