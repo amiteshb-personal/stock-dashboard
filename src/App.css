@@ -1247,3 +1247,45 @@ body {
 }
 
 .picks-mood { color: var(--text-2); }
+
+/* ── About modal extras ── */
+.about-picks-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.about-confidence-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.about-confidence-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.about-confidence-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid;
+  width: fit-content;
+}
+
+.about-confidence-high   { color: #00a86b; border-color: #00a86b; background: rgba(0,168,107,0.08); }
+.about-confidence-medium { color: #d97706; border-color: #d97706; background: rgba(217,119,6,0.08); }
+.about-confidence-low    { color: #e53e3e; border-color: #e53e3e; background: rgba(229,62,62,0.08); }
