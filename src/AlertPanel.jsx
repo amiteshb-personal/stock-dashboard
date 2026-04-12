@@ -1,9 +1,7 @@
 import { useState } from 'react'
 
-const TICKERS = ['ANY', 'AAPL', 'TSLA', 'MSFT', 'GOOGL', 'AMZN']
-
 // One row in the "Add a rule" form
-function RuleForm({ onAdd }) {
+function RuleForm({ onAdd, watchlist }) {
   const [ticker, setTicker]       = useState('ANY')
   const [condition, setCondition] = useState('drops_below')
   const [value, setValue]         = useState('')
@@ -27,8 +25,9 @@ function RuleForm({ onAdd }) {
         value={ticker}
         onChange={e => setTicker(e.target.value)}
       >
-        {TICKERS.map(t => (
-          <option key={t} value={t}>{t === 'ANY' ? 'Any stock' : t}</option>
+        <option value="ANY">Any stock</option>
+        {watchlist.map(s => (
+          <option key={s.ticker} value={s.ticker}>{s.ticker}</option>
         ))}
       </select>
 
@@ -65,7 +64,7 @@ function RuleForm({ onAdd }) {
 }
 
 // The full panel rendered below the header when the bell is clicked
-function AlertPanel({ rules, history, onAddRule, onDeleteRule, onClearHistory }) {
+function AlertPanel({ rules, history, onAddRule, onDeleteRule, onClearHistory, watchlist }) {
   function describeRule(rule) {
     const ticker = rule.ticker === 'ANY' ? 'Any stock' : rule.ticker
     if (rule.condition === 'drops_below') return `${ticker} drops below $${rule.value}`
@@ -86,7 +85,7 @@ function AlertPanel({ rules, history, onAddRule, onDeleteRule, onClearHistory })
       {/* ── Rules section ── */}
       <div className="alert-section">
         <h3 className="alert-section-title">Alert Rules</h3>
-        <RuleForm onAdd={onAddRule} />
+        <RuleForm onAdd={onAddRule} watchlist={watchlist} />
 
         {rules.length === 0 ? (
           <p className="alert-empty">No rules yet. Add one above.</p>

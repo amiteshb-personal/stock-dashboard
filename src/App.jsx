@@ -498,6 +498,7 @@ function App() {
             onAddRule={handleAddRule}
             onDeleteRule={handleDeleteRule}
             onClearHistory={handleClearHistory}
+            watchlist={watchlist}
           />
         </div>
       )}
