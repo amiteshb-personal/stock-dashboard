@@ -23,7 +23,7 @@ function CustomTooltip({ active, payload, label }) {
 // StockChart renders a 30-day area chart for one stock
 function StockChart({ data, isPositive }) {
   // Pick green or red as the chart color based on whether the stock is up/down
-  const color = isPositive ? '#22c55e' : '#ef4444'
+  const color = isPositive ? '#00a86b' : '#e53e3e'
   const gradientId = isPositive ? 'gradientGreen' : 'gradientRed'
 
   if (!data || data.length === 0) {
@@ -51,12 +51,12 @@ function StockChart({ data, isPositive }) {
           </defs>
 
           {/* Subtle grid lines */}
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e8e8e8" />
 
           {/* X axis: the dates */}
           <XAxis
             dataKey="date"
-            tick={{ fill: '#64748b', fontSize: 11 }}
+            tick={{ fill: '#aaaaaa', fontSize: 11 }}
             tickLine={false}
             axisLine={false}
             interval="preserveStartEnd"
@@ -65,7 +65,7 @@ function StockChart({ data, isPositive }) {
           {/* Y axis: prices, tucked tight to the data range */}
           <YAxis
             domain={[minPrice - padding, maxPrice + padding]}
-            tick={{ fill: '#64748b', fontSize: 11 }}
+            tick={{ fill: '#aaaaaa', fontSize: 11 }}
             tickLine={false}
             axisLine={false}
             tickFormatter={v => `$${v.toFixed(0)}`}
