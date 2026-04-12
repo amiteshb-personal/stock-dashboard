@@ -289,12 +289,23 @@ function App() {
     ])
 
     try {
-      // Normalise Finnhub articles → { headline, url, source, datetime }
-      const finnhubItems = (finnhubData.status === 'fulfilled' && Array.isArray(finnhubData.value))
-        ? finnhubData.value
-            .filter(i => i.headline && i.url)
-            .slice(0, 5)
+      // Normalise Finnhub articles — fetch up to 30, then diversify by source
+      const rawFinnhub = (finnhubData.status === 'fulfilled' && Array.isArray(finnhubData.value))
+        ? finnhubData.value.filter(i => i.headline && i.url).slice(0, 30)
         : []
+
+      // Cap at 2 per source so Yahoo doesn't fill all slots
+      const sourceCounts = {}
+      const finnhubItems = []
+      for (const item of rawFinnhub) {
+        const src = item.source || 'Unknown'
+        const isYahoo = src.toLowerCase().includes('yahoo')
+        const cap = isYahoo ? 1 : 2
+        if ((sourceCounts[src] || 0) >= cap) continue
+        sourceCounts[src] = (sourceCounts[src] || 0) + 1
+        finnhubItems.push(item)
+        if (finnhubItems.length >= 8) break
+      }
 
       // Normalise GNews articles to the same shape
       const gNewsItems = (gNewsData.status === 'fulfilled' && gNewsData.value?.articles)
@@ -313,8 +324,8 @@ function App() {
       }
 
       // Merge, deduplicate by headline prefix, sort newest first
-      const seen    = new Set()
-      const merged  = [...finnhubItems, ...gNewsItems]
+      const seen   = new Set()
+      const merged = [...finnhubItems, ...gNewsItems]
         .filter(item => {
           const key = item.headline.slice(0, 60).toLowerCase()
           if (seen.has(key)) return false
