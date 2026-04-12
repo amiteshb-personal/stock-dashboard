@@ -18,6 +18,7 @@ import './App.css'
 const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
+const GNEWS_KEY   = import.meta.env.VITE_GNEWS_KEY
 
 const DEFAULT_WATCHLIST = [
   { ticker: 'AAPL', name: 'Apple Inc.' },
@@ -271,16 +272,59 @@ function App() {
     setNewsLoading(true)
     setNewsError(null)
     setNews([])
+
     const today   = new Date()
     const weekAgo = new Date(today)
     weekAgo.setDate(today.getDate() - 7)
     const fmt = d => d.toISOString().split('T')[0]
+
+    // Fetch Finnhub company news and GNews in parallel
+    const [finnhubData, gNewsData] = await Promise.allSettled([
+      fetch(`https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${fmt(weekAgo)}&to=${fmt(today)}&token=${FINNHUB_KEY}`)
+        .then(r => r.json()),
+      GNEWS_KEY
+        ? fetch(`https://gnews.io/api/v4/search?q=${ticker}+stock&lang=en&max=5&token=${GNEWS_KEY}`)
+            .then(r => r.json())
+        : Promise.resolve(null),
+    ])
+
     try {
-      const url = `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${fmt(weekAgo)}&to=${fmt(today)}&token=${FINNHUB_KEY}`
-      const res = await fetch(url)
-      const data = await res.json()
-      if (!Array.isArray(data)) throw new Error('Unexpected response from news API.')
-      setNews(data.filter(item => item.headline && item.url).slice(0, 5))
+      // Normalise Finnhub articles → { headline, url, source, datetime }
+      const finnhubItems = (finnhubData.status === 'fulfilled' && Array.isArray(finnhubData.value))
+        ? finnhubData.value
+            .filter(i => i.headline && i.url)
+            .slice(0, 5)
+        : []
+
+      // Normalise GNews articles to the same shape
+      const gNewsItems = (gNewsData.status === 'fulfilled' && gNewsData.value?.articles)
+        ? gNewsData.value.articles
+            .filter(a => a.title && a.url)
+            .map(a => ({
+              headline: a.title,
+              url:      a.url,
+              source:   a.source?.name || 'GNews',
+              datetime: Math.floor(new Date(a.publishedAt).getTime() / 1000),
+            }))
+        : []
+
+      if (finnhubItems.length === 0 && gNewsItems.length === 0) {
+        throw new Error('No headlines found.')
+      }
+
+      // Merge, deduplicate by headline prefix, sort newest first
+      const seen    = new Set()
+      const merged  = [...finnhubItems, ...gNewsItems]
+        .filter(item => {
+          const key = item.headline.slice(0, 60).toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        .sort((a, b) => b.datetime - a.datetime)
+        .slice(0, 8)
+
+      setNews(merged)
     } catch (err) {
       setNewsError('Could not load news: ' + err.message)
     } finally {
