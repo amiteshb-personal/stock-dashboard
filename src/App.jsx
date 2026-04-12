@@ -17,12 +17,14 @@ import './App.css'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
 
+// Always use daily resolution — free tier doesn't support W/M.
+// maxPoints controls how many data points end up in the chart (downsampled client-side).
 const TIMEFRAMES = {
-  '1M':  { days: 42,   resolution: 'D' },
-  '3M':  { days: 100,  resolution: 'D' },
-  '1Y':  { days: 370,  resolution: 'W' },
-  '5Y':  { days: 1830, resolution: 'M' },
-  '10Y': { days: 3660, resolution: 'M' },
+  '1M':  { days: 42,   maxPoints: 31  },
+  '3M':  { days: 100,  maxPoints: 65  },
+  '1Y':  { days: 370,  maxPoints: 52  },
+  '5Y':  { days: 1830, maxPoints: 60  },
+  '10Y': { days: 3660, maxPoints: 60  },
 }
 
 function getGridCols() {
@@ -249,30 +251,38 @@ function App() {
       return
     }
 
-    const { days, resolution } = TIMEFRAMES[timeframe]
+    const { days, maxPoints } = TIMEFRAMES[timeframe]
 
     try {
       const to   = Math.floor(Date.now() / 1000)
       const from = to - 60 * 60 * 24 * days
-      const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_KEY}`
+      // Always use daily ('D') — free tier doesn't support W or M resolution
+      const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
       const res  = await fetch(url)
       const data = await res.json()
 
       if (data.s !== 'ok' || !data.c) throw new Error('No chart data returned.')
 
-      // Format date labels based on resolution granularity
-      const points = data.t.map((timestamp, i) => {
+      // Build full daily series first
+      const allPoints = data.t.map((timestamp, i) => {
         const d = new Date(timestamp * 1000)
-        let date
-        if (resolution === 'D') {
-          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        } else if (resolution === 'W') {
-          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
-        } else {
-          date = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-        }
+        // For longer timeframes include the year in the label
+        const date = days > 100
+          ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         return { date, price: data.c[i] }
       })
+
+      // Downsample so the chart doesn't get crowded for longer ranges
+      let points = allPoints
+      if (allPoints.length > maxPoints) {
+        const step = Math.ceil(allPoints.length / maxPoints)
+        points = allPoints.filter((_, i) => i % step === 0)
+        // Always include the most recent point
+        if (points[points.length - 1] !== allPoints[allPoints.length - 1]) {
+          points.push(allPoints[allPoints.length - 1])
+        }
+      }
 
       saveToCache(cacheKey, points)
       setChartData(points)
