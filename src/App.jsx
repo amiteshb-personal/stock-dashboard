@@ -3,6 +3,8 @@ import StockCard from './StockCard'
 import DetailPanel from './DetailPanel'
 import AlertPanel from './AlertPanel'
 import AboutModal from './AboutModal'
+import DailyPicks from './DailyPicks'
+import { getDailyPicks, loadPicksFromCache } from './picksService'
 import { analyzeStock } from './AIAnalysis'
 import {
   requestNotificationPermission,
@@ -137,6 +139,12 @@ function App() {
   const [alertHistory, setAlertHistory] = useState(() => loadHistory())
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [aboutOpen, setAboutOpen]   = useState(false)
+
+  // ── Daily picks state ─────────────────────────────────────────────────
+  const [picks, setPicks]             = useState(() => loadPicksFromCache())
+  const [picksLoading, setPicksLoading] = useState(false)
+  const [picksError, setPicksError]   = useState(null)
+  const [picksFromCache, setPicksFromCache] = useState(false)
   const [notifGranted, setNotifGranted] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
   )
@@ -334,6 +342,49 @@ function App() {
     }
   }
 
+  // ── Daily picks ───────────────────────────────────────────────────────────
+
+  async function fetchPicks(forceRefresh = false) {
+    setPicksLoading(true)
+    setPicksError(null)
+    try {
+      const result = await getDailyPicks(forceRefresh)
+      setPicks(result)
+      setPicksFromCache(!!result.fromCache)
+    } catch (err) {
+      setPicksError('Could not generate picks: ' + err.message)
+    } finally {
+      setPicksLoading(false)
+    }
+  }
+
+  // Add a stock directly from a daily pick (ticker + name already known)
+  async function handleAddFromPick(ticker, name) {
+    if (watchlistRef.current.find(s => s.ticker === ticker)) return
+    try {
+      const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
+      const quoteRes = await fetch(quoteUrl)
+      const quote    = await quoteRes.json()
+
+      const newEntry = { ticker, name }
+      const newList  = [...watchlistRef.current, newEntry]
+      setWatchlist(newList)
+      saveWatchlist(newList)
+
+      if (quote && quote.c) {
+        setStocks(prev => [...prev, {
+          ticker,
+          name,
+          price:         quote.c.toFixed(2),
+          change:        (quote.d  || 0).toFixed(2),
+          changePercent: (quote.dp || 0).toFixed(2),
+        }])
+      }
+    } catch {
+      // silently fail — stock just won't appear until next refresh
+    }
+  }
+
   // ── Add / delete stocks ───────────────────────────────────────────────────
 
   async function handleAddStock() {
@@ -450,6 +501,7 @@ function App() {
 
   useEffect(() => {
     fetchAllStocks()
+    fetchPicks()   // load daily picks on startup (uses cache if fresh)
 
     // Poll for fresh prices every 5 minutes to check alerts silently
     pollRef.current = setInterval(() => {
@@ -512,6 +564,16 @@ function App() {
           />
         </div>
       )}
+
+      <DailyPicks
+        picks={picks}
+        loading={picksLoading}
+        error={picksError}
+        fromCache={picksFromCache}
+        onRefresh={() => fetchPicks(true)}
+        watchlist={watchlist}
+        onAddToWatchlist={handleAddFromPick}
+      />
 
       <main className="main">
         {loading && stocks.length === 0 && (

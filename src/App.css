@@ -963,3 +963,287 @@ body {
   line-height: 1.6;
   font-style: italic;
 }
+
+/* ── Daily Picks section ── */
+.daily-picks-section {
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.daily-picks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.daily-picks-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.daily-picks-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.2px;
+}
+
+.daily-picks-title-accent {
+  color: var(--accent);
+  margin-right: 0.4rem;
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
+.daily-picks-date {
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+.daily-picks-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* ── Disclaimer banner ── */
+.picks-disclaimer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(255, 91, 0, 0.04);
+  border-bottom: 1px solid rgba(255, 91, 0, 0.12);
+  font-size: 0.78rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.picks-disclaimer-icon {
+  color: var(--accent);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Loading / error ── */
+.picks-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1.25rem;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+
+.picks-error {
+  padding: 1.5rem 1.25rem;
+  color: var(--red);
+  font-size: 0.85rem;
+}
+
+.picks-error button {
+  margin-top: 0.6rem;
+  background: var(--red);
+  color: white;
+  border: none;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+}
+
+/* ── Picks grid ── */
+.picks-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 700px) {
+  .picks-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Pick card ── */
+.pick-card {
+  padding: 1.25rem;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.pick-card:last-child { border-right: none; }
+
+@media (max-width: 700px) {
+  .pick-card { border-right: none; border-bottom: 1px solid var(--border); }
+  .pick-card:last-child { border-bottom: none; }
+}
+
+.pick-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pick-ticker {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-1);
+  letter-spacing: 0.3px;
+}
+
+.pick-confidence {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pick-name {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  margin-top: -0.5rem;
+}
+
+.pick-why-now {
+  font-size: 0.82rem;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+/* ── Score bars ── */
+.pick-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.score-bar-wrap { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.score-bar-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.score-bar-label { font-size: 0.72rem; color: var(--text-2); }
+
+.score-bar-value { font-size: 0.78rem; font-weight: 700; }
+
+.score-bar-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* ── Pros / Cons ── */
+.pick-pros-cons { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.pick-pros-cons-heading {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.pick-pros-heading { color: var(--green); }
+.pick-cons-heading { color: var(--red); }
+
+.pick-pros-cons-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pick-pro-item,
+.pick-con-item {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  line-height: 1.45;
+  display: flex;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.pick-pro-icon {
+  color: var(--green);
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.pick-con-icon {
+  color: var(--red);
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+/* ── Add to watchlist button ── */
+.pick-add-btn {
+  margin-top: auto;
+  width: 100%;
+  padding: 0.45rem 0;
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+}
+
+.pick-add-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pick-add-btn-added {
+  border-color: var(--border);
+  color: var(--text-3);
+  cursor: default;
+}
+
+.pick-add-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Footer ── */
+.picks-footer {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.72rem;
+  color: var(--text-3);
+  line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.picks-mood { color: var(--text-2); }
