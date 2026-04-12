@@ -7,9 +7,10 @@ const anthropic = new Anthropic({
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
 const NEWSAPI_KEY = import.meta.env.VITE_NEWSAPI_KEY
-const CACHE_KEY   = 'daily_picks_v4'
-const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
-const MAX_PER_SOURCE = 3  // cap per outlet so no single source dominates
+const CACHE_KEY      = 'daily_picks_v5'
+const CACHE_TTL      = 24 * 60 * 60 * 1000  // 24 hours
+const MAX_PER_SOURCE = 2  // cap per outlet so no single source dominates
+const YAHOO_CAP      = 1  // Yahoo Finance specifically — hard cap at 1 article
 
 export function loadPicksFromCache() {
   try {
@@ -87,7 +88,9 @@ function mergeAndDiversify(finnhubItems, newsApiItems) {
     if (seen.has(key)) continue
     seen.add(key)
 
-    if ((sourceCounts[src] || 0) >= MAX_PER_SOURCE) continue
+    const isYahoo = src.toLowerCase().includes('yahoo')
+    const cap     = isYahoo ? YAHOO_CAP : MAX_PER_SOURCE
+    if ((sourceCounts[src] || 0) >= cap) continue
     sourceCounts[src] = (sourceCounts[src] || 0) + 1
     items.push(item)
     if (items.length >= 60) break
