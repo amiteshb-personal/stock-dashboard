@@ -50,9 +50,11 @@ Respond with a JSON object only — no markdown, no code fences, just raw JSON:
     messages: [{ role: 'user', content: prompt }],
   })
 
-  // Parse the JSON Claude returns
+  // Parse the JSON Claude returns.
+  // Strip markdown code fences (```json ... ```) in case the model adds them anyway.
   const raw = message.content[0].text.trim()
-  return JSON.parse(raw)
+  const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')
+  return JSON.parse(json)
 }
 
 // ── AIAnalysis display component ───────────────────────────────────────────
