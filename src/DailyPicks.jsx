@@ -167,12 +167,22 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
 
           {/* Footer */}
           <div className="picks-footer">
-            <span>
-              Based on {picks.newsCount || '50+'} headlines via Finnhub news aggregator
-              (Reuters, MarketWatch, Yahoo Finance, Seeking Alpha, and more).
-            </span>
             {picks.sourceSummary && (
-              <span className="picks-mood"> Market mood: {picks.sourceSummary}</span>
+              <p className="picks-mood">
+                <strong>Market mood:</strong> {picks.sourceSummary}
+              </p>
+            )}
+            {picks.sources && picks.sources.length > 0 && (
+              <div className="picks-sources">
+                <p className="picks-sources-label">
+                  Based on {picks.newsCount || picks.sources.length * 2}+ headlines from {picks.sources.length} sources:
+                </p>
+                <div className="picks-sources-list">
+                  {picks.sources.map(s => (
+                    <span key={s} className="picks-source-tag">{s}</span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </>

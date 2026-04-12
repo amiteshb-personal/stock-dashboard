@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v1'
+const CACHE_KEY   = 'daily_picks_v2'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 export function loadPicksFromCache() {
@@ -31,12 +31,17 @@ async function fetchMarketNews() {
   const data = await res.json()
   if (!Array.isArray(data)) throw new Error('Could not load market news from Finnhub.')
   // Take the 50 most recent headlines with short summaries
-  return data.slice(0, 50).map(item => ({
+  const items = data.slice(0, 50).map(item => ({
     headline: item.headline,
     source:   item.source,
     summary:  item.summary ? item.summary.slice(0, 180) : '',
     related:  item.related,
   }))
+
+  // Collect unique source names, sorted alphabetically
+  const sources = [...new Set(items.map(i => i.source).filter(Boolean))].sort()
+
+  return { items, sources }
 }
 
 export async function getDailyPicks(forceRefresh = false) {
@@ -45,7 +50,7 @@ export async function getDailyPicks(forceRefresh = false) {
     if (cached) return { ...cached, fromCache: true }
   }
 
-  const news = await fetchMarketNews()
+  const { items: news, sources } = await fetchMarketNews()
 
   const headlineText = news.map((n, i) =>
     `${i + 1}. [${n.source}] ${n.headline}` +
@@ -99,7 +104,7 @@ confidence must be exactly one of: "low", "medium", "high"`
 
   const raw  = message.content[0].text.trim()
   const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')
-  const result = JSON.parse(json)
+  const result = { ...JSON.parse(json), sources }
 
   savePicksToCache(result)
   return { ...result, fromCache: false }
