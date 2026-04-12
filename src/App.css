@@ -83,6 +83,95 @@
   cursor: not-allowed;
 }
 
+/* ── Add stock form ── */
+.add-stock-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.add-stock-input {
+  flex: 1;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  padding: 0.5rem 0.875rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+  max-width: 260px;
+}
+
+.add-stock-input::placeholder { color: #475569; }
+
+.add-stock-input:focus {
+  border-color: #3b82f6;
+}
+
+.add-stock-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.add-stock-btn {
+  background: #22c55e;
+  color: #0f172a;
+  border: none;
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.add-stock-btn:hover:not(:disabled) { background: #16a34a; }
+
+.add-stock-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.add-stock-error {
+  font-size: 0.8rem;
+  color: #fca5a5;
+  margin-bottom: 0.75rem;
+  padding-left: 0.25rem;
+}
+
+/* ── Card delete button (visible on hover) ── */
+.card-delete-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  background: transparent;
+  border: none;
+  color: #475569;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.stock-card:hover .card-delete-btn {
+  opacity: 1;
+}
+
+.card-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
 /* ── Stock Grid ── */
 .grid {
   display: grid;

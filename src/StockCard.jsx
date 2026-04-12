@@ -1,6 +1,6 @@
 // StockCard displays a single stock's information.
-// onClick and isSelected are new — they let the parent know which card was clicked.
-function StockCard({ stock, onClick, isSelected }) {
+// onDelete shows a × button on hover so the user can remove it from the watchlist.
+function StockCard({ stock, onClick, isSelected, onDelete }) {
   const isPositive = parseFloat(stock.changePercent) >= 0
 
   return (
@@ -9,6 +9,17 @@ function StockCard({ stock, onClick, isSelected }) {
       onClick={onClick}
       title="Click to see news"
     >
+      {onDelete && (
+        <button
+          className="card-delete-btn"
+          onClick={e => { e.stopPropagation(); onDelete(stock.ticker) }}
+          title={`Remove ${stock.ticker}`}
+          aria-label={`Remove ${stock.ticker}`}
+        >
+          ×
+        </button>
+      )}
+
       <div className="card-top">
         <span className="ticker">{stock.ticker}</span>
         <span className={`badge ${isPositive ? 'badge-up' : 'badge-down'}`}>

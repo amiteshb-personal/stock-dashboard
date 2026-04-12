@@ -16,13 +16,24 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
 
-const WATCHLIST = [
+const DEFAULT_WATCHLIST = [
   { ticker: 'AAPL', name: 'Apple Inc.' },
   { ticker: 'TSLA', name: 'Tesla, Inc.' },
   { ticker: 'MSFT', name: 'Microsoft Corp.' },
   { ticker: 'GOOGL', name: 'Alphabet Inc.' },
   { ticker: 'AMZN', name: 'Amazon.com, Inc.' },
 ]
+
+function loadWatchlist() {
+  try {
+    const saved = localStorage.getItem('watchlist')
+    return saved ? JSON.parse(saved) : DEFAULT_WATCHLIST
+  } catch { return DEFAULT_WATCHLIST }
+}
+
+function saveWatchlist(list) {
+  localStorage.setItem('watchlist', JSON.stringify(list))
+}
 
 // Shown when the API is rate-limited and there's no cache yet.
 // Prices are approximate — just enough to make the UI usable during development.
@@ -88,13 +99,21 @@ function loadFromCache(key, ttlMs) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function App() {
+  const [watchlist, setWatchlist]     = useState(() => loadWatchlist())
+  const watchlistRef = useRef(null)
+  watchlistRef.current = watchlist   // always current, even inside async functions
+
   const [stocks, setStocks]           = useState([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
-  // fromCache = true means the header shows "Using cached data" instead of a time
   const [fromCache, setFromCache]     = useState(false)
   const [fromDemo, setFromDemo]       = useState(false)
+
+  // ── Add stock form state ──────────────────────────────────────────────
+  const [addInput, setAddInput]       = useState('')
+  const [addLoading, setAddLoading]   = useState(false)
+  const [addError, setAddError]       = useState(null)
 
   const [selectedTicker, setSelectedTicker] = useState(null)
   const [activeTab, setActiveTab]           = useState('chart')
@@ -141,7 +160,7 @@ function App() {
     if (!data.c) throw new Error(`No data returned for ${ticker}`)
     return {
       ticker,
-      name: WATCHLIST.find(s => s.ticker === ticker).name,
+      name: (watchlistRef.current.find(s => s.ticker === ticker) || {}).name || ticker,
       price: data.c.toFixed(2),
       change: data.d.toFixed(2),
       changePercent: data.dp.toFixed(2),
@@ -169,7 +188,7 @@ function App() {
     setFromDemo(false)
     try {
       // Finnhub allows 60 req/min so we can fetch all 5 at the same time
-      const results = await Promise.all(WATCHLIST.map(s => fetchStock(s.ticker)))
+      const results = await Promise.all(watchlistRef.current.map(s => fetchStock(s.ticker)))
       setStocks(results)
       saveToCache('stocks', results)
       setLastUpdated(new Date().toLocaleTimeString())
@@ -307,6 +326,67 @@ function App() {
     }
   }
 
+  // ── Add / delete stocks ───────────────────────────────────────────────────
+
+  async function handleAddStock() {
+    const ticker = addInput.trim().toUpperCase()
+    if (!ticker) return
+    if (watchlistRef.current.find(s => s.ticker === ticker)) {
+      setAddError(`${ticker} is already in your watchlist.`)
+      return
+    }
+    setAddLoading(true)
+    setAddError(null)
+    try {
+      // Validate the ticker exists by hitting the Finnhub profile endpoint
+      const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`
+      const profileRes = await fetch(profileUrl)
+      const profile    = await profileRes.json()
+      if (!profile || !profile.name) {
+        throw new Error(`Could not find a stock with ticker "${ticker}". Check the symbol and try again.`)
+      }
+
+      // Fetch the current quote so the card shows real data immediately
+      const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
+      const quoteRes = await fetch(quoteUrl)
+      const quote    = await quoteRes.json()
+
+      // Persist the new watchlist entry
+      const newEntry = { ticker, name: profile.name }
+      const newList  = [...watchlistRef.current, newEntry]
+      setWatchlist(newList)
+      saveWatchlist(newList)
+
+      // Add the stock card with live price (or a placeholder if market is closed)
+      if (quote && quote.c) {
+        setStocks(prev => [...prev, {
+          ticker,
+          name:          profile.name,
+          price:         quote.c.toFixed(2),
+          change:        (quote.d || 0).toFixed(2),
+          changePercent: (quote.dp || 0).toFixed(2),
+        }])
+      }
+
+      setAddInput('')
+    } catch (err) {
+      setAddError(err.message)
+    } finally {
+      setAddLoading(false)
+    }
+  }
+
+  function handleDeleteStock(ticker) {
+    const newList = watchlistRef.current.filter(s => s.ticker !== ticker)
+    setWatchlist(newList)
+    saveWatchlist(newList)
+    setStocks(prev => prev.filter(s => s.ticker !== ticker))
+    if (selectedTicker === ticker) {
+      setSelectedTicker(null)
+      setAnalysis(null)
+    }
+  }
+
   // ── Alert helpers ─────────────────────────────────────────────────────
 
   function runAlertChecks(latestStocks) {
@@ -441,6 +521,31 @@ function App() {
         {stocks.length > 0 && (
           <>
             <p className="hint">Click any card to see the chart and news</p>
+
+            {/* ── Add stock form ── */}
+            <form
+              className="add-stock-form"
+              onSubmit={e => { e.preventDefault(); handleAddStock() }}
+            >
+              <input
+                className="add-stock-input"
+                type="text"
+                placeholder="Add ticker, e.g. NVDA"
+                value={addInput}
+                onChange={e => { setAddInput(e.target.value.toUpperCase()); setAddError(null) }}
+                disabled={addLoading}
+                maxLength={10}
+              />
+              <button
+                className="add-stock-btn"
+                type="submit"
+                disabled={addLoading || !addInput.trim()}
+              >
+                {addLoading ? 'Adding…' : '+ Add'}
+              </button>
+            </form>
+            {addError && <p className="add-stock-error">{addError}</p>}
+
             <div className="grid">
               {stocks.map(stock => (
                 <StockCard
@@ -448,6 +553,7 @@ function App() {
                   stock={stock}
                   onClick={() => handleCardClick(stock.ticker)}
                   isSelected={selectedTicker === stock.ticker}
+                  onDelete={handleDeleteStock}
                 />
               ))}
             </div>
