@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import StockCard from './StockCard'
 import DetailPanel from './DetailPanel'
 import AlertPanel from './AlertPanel'
+import AboutModal from './AboutModal'
 import { analyzeStock } from './AIAnalysis'
 import {
   requestNotificationPermission,
@@ -135,6 +136,7 @@ function App() {
   const [rules, setRules]           = useState(() => loadRules())
   const [alertHistory, setAlertHistory] = useState(() => loadHistory())
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [aboutOpen, setAboutOpen]   = useState(false)
   const [notifGranted, setNotifGranted] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
   )
@@ -462,6 +464,7 @@ function App() {
 
   return (
     <div className="app">
+      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
       <header className="header">
         <h1>Stock Watchlist</h1>
         <div className="header-right">
@@ -475,6 +478,7 @@ function App() {
             <span className="last-updated">Updated: {lastUpdated}</span>
           )}
           {/* Bell button — opens/closes the alerts panel */}
+          <button className="about-btn" onClick={() => setAboutOpen(true)}>About</button>
           <button className="bell-btn" onClick={handleOpenAlerts} title="Alerts">
             🔔
             {unreadCount > 0 && (

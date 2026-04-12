@@ -800,3 +800,166 @@ body {
 
 .history-msg  { font-size: 0.78rem; color: var(--text-1); line-height: 1.4; }
 .history-time { font-size: 0.68rem; color: var(--text-3); margin-top: 0.15rem; }
+
+/* ── About button ── */
+.about-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+  font-family: inherit;
+}
+
+.about-btn:hover {
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+
+/* ── Modal overlay ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1.25rem;
+  animation: fadeIn 0.15s ease;
+}
+
+/* ── Modal box ── */
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.2px;
+}
+
+.modal-title-accent {
+  color: var(--accent);
+  margin-right: 0.4rem;
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  transition: color 0.12s;
+  font-family: inherit;
+}
+
+.modal-close:hover { color: var(--text-1); }
+
+.modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── About sections ── */
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.about-heading {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.about-text {
+  font-size: 0.875rem;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+.about-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.about-link:hover { text-decoration: underline; }
+
+/* ── Data sources list ── */
+.about-sources {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.about-source-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-left: 2px solid var(--accent);
+}
+
+.about-source-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.about-source-desc {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+/* ── Disclaimer ── */
+.about-disclaimer-section {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.about-disclaimer {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  line-height: 1.6;
+  font-style: italic;
+}
