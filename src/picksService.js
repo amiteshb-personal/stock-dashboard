@@ -6,8 +6,10 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v2'
+const NEWSAPI_KEY = import.meta.env.VITE_NEWSAPI_KEY
+const CACHE_KEY   = 'daily_picks_v4'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
+const MAX_PER_SOURCE = 3  // cap per outlet so no single source dominates
 
 export function loadPicksFromCache() {
   try {
@@ -25,32 +27,92 @@ function savePicksToCache(data) {
   localStorage.setItem(CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }))
 }
 
-async function fetchMarketNews() {
-  const url = `https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`
-  const res  = await fetch(url)
-  const data = await res.json()
-  if (!Array.isArray(data)) throw new Error('Could not load market news from Finnhub.')
-  // Take the 50 most recent headlines with short summaries
-  const items = data.slice(0, 50).map(item => ({
-    headline: item.headline,
-    source:   item.source,
-    summary:  item.summary ? item.summary.slice(0, 180) : '',
-    related:  item.related,
-  }))
+// ── Finnhub general market news ───────────────────────────────────────────────
+async function fetchFinnhubNews() {
+  try {
+    const url  = `https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`
+    const res  = await fetch(url)
+    const data = await res.json()
+    if (!Array.isArray(data)) return []
+    return data.slice(0, 100).map(item => ({
+      headline: item.headline,
+      source:   item.source || 'Finnhub',
+      summary:  item.summary ? item.summary.slice(0, 180) : '',
+      related:  item.related || '',
+    }))
+  } catch {
+    return []
+  }
+}
 
-  // Collect unique source names, sorted alphabetically
+// ── NewsAPI business headlines ─────────────────────────────────────────────────
+async function fetchNewsApiArticles() {
+  if (!NEWSAPI_KEY) return []
+  try {
+    // Top business headlines — broad and diverse
+    const url = `https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=50&apiKey=${NEWSAPI_KEY}`
+    const res  = await fetch(url)
+    const data = await res.json()
+    if (data.status !== 'ok' || !Array.isArray(data.articles)) return []
+    return data.articles.map(a => ({
+      headline: a.title,
+      source:   a.source?.name || 'NewsAPI',
+      summary:  a.description ? a.description.slice(0, 180) : '',
+      related:  '',
+    }))
+  } catch {
+    return []
+  }
+}
+
+// ── Merge, deduplicate, cap per source ────────────────────────────────────────
+function mergeAndDiversify(finnhubItems, newsApiItems) {
+  // Interleave so both sources are represented (Finnhub first, then NewsAPI)
+  const combined = []
+  const maxLen   = Math.max(finnhubItems.length, newsApiItems.length)
+  for (let i = 0; i < maxLen; i++) {
+    if (i < finnhubItems.length) combined.push(finnhubItems[i])
+    if (i < newsApiItems.length) combined.push(newsApiItems[i])
+  }
+
+  // Cap MAX_PER_SOURCE articles per outlet and collect up to 60 diverse items
+  const sourceCounts = {}
+  const seen         = new Set()
+  const items        = []
+
+  for (const item of combined) {
+    const src = item.source || 'Unknown'
+    // Skip near-duplicate headlines
+    const key = item.headline.slice(0, 60).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    if ((sourceCounts[src] || 0) >= MAX_PER_SOURCE) continue
+    sourceCounts[src] = (sourceCounts[src] || 0) + 1
+    items.push(item)
+    if (items.length >= 60) break
+  }
+
   const sources = [...new Set(items.map(i => i.source).filter(Boolean))].sort()
-
   return { items, sources }
 }
 
+// ── Main export ───────────────────────────────────────────────────────────────
 export async function getDailyPicks(forceRefresh = false) {
   if (!forceRefresh) {
     const cached = loadPicksFromCache()
     if (cached) return { ...cached, fromCache: true }
   }
 
-  const { items: news, sources } = await fetchMarketNews()
+  // Fetch both sources in parallel
+  const [finnhubItems, newsApiItems] = await Promise.all([
+    fetchFinnhubNews(),
+    fetchNewsApiArticles(),
+  ])
+
+  const { items: news, sources } = mergeAndDiversify(finnhubItems, newsApiItems)
+
+  if (news.length === 0) throw new Error('Could not load any news. Check your API keys.')
 
   const headlineText = news.map((n, i) =>
     `${i + 1}. [${n.source}] ${n.headline}` +
@@ -62,9 +124,9 @@ export async function getDailyPicks(forceRefresh = false) {
 
   const prompt = `You are a senior equity research analyst. Today is ${today}.
 
-Analyze the following recent financial headlines and identify exactly 3 publicly traded US stocks receiving notably positive news coverage AND showing genuine fundamental support.
+Analyze the following recent financial headlines from multiple news sources and identify exactly 3 publicly traded US stocks receiving notably positive coverage with genuine fundamental support.
 
-The 3 stocks do NOT need to be from any particular list — pick the most compelling ones regardless of size. Smaller high-momentum companies are fine.
+The stocks do NOT need to be from any particular list — pick the most compelling ones regardless of size.
 
 HEADLINES:
 ${headlineText}
@@ -73,18 +135,18 @@ For each stock provide honest probability scores 0–100:
 - "gain20in1yr": probability of gaining 20%+ in the next 12 months
 - "return10in5yr": probability of 10%+ annualized return over 5 years
 
-Scoring calibration: 50 = coin flip. Most scores should land 30–65. Only go above 70 if the evidence is genuinely exceptional. Be conservative — overconfident scores are worse than honest uncertain ones.
+Scoring calibration: 50 = coin flip. Most scores 30–65. Only exceed 70 if evidence is genuinely exceptional. Be conservative.
 
 Respond with raw JSON only (no markdown, no code fences):
 {
   "date": "${today}",
-  "sourceSummary": "One sentence describing today's overall market mood from these headlines",
+  "sourceSummary": "One sentence on today's overall market mood",
   "newsCount": ${news.length},
   "picks": [
     {
       "ticker": "TICKER",
       "name": "Full Company Name",
-      "whyNow": "2-3 sentences explaining why this stock stands out in today's news",
+      "whyNow": "2-3 sentences on why this stock stands out today",
       "gain20in1yr": 52,
       "return10in5yr": 61,
       "pros": ["pro 1", "pro 2", "pro 3"],
@@ -102,8 +164,8 @@ confidence must be exactly one of: "low", "medium", "high"`
     messages:   [{ role: 'user', content: prompt }],
   })
 
-  const raw  = message.content[0].text.trim()
-  const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')
+  const raw    = message.content[0].text.trim()
+  const json   = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')
   const result = { ...JSON.parse(json), sources }
 
   savePicksToCache(result)
