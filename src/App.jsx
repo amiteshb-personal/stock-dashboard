@@ -287,14 +287,7 @@ function App() {
       saveToCache(cacheKey, points)
       setChartData(points)
     } catch (err) {
-      // Fall back to pre-built demo data, or generate one on the fly for newer tickers
-      if (DEMO_CHARTS[ticker]) {
-        setChartData(DEMO_CHARTS[ticker])
-      } else {
-        const stock = stocks.find(s => s.ticker === ticker)
-        const startPrice = stock ? parseFloat(stock.price) : 100
-        setChartData(generateDemoChart(startPrice, startPrice * 0.018))
-      }
+      setChartError('Could not load chart data: ' + err.message)
     } finally {
       setChartLoading(false)
     }

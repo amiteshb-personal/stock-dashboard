@@ -71,8 +71,13 @@ function DetailPanel({
               </div>
             )}
             {chartError && <p className="news-error">{chartError}</p>}
-            {!chartLoading && !chartError && (
-              <StockChart data={chartData} isPositive={isPositive} />
+            {!chartLoading && !chartError && chartData.length > 0 && (
+              <>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-2)', margin: '0 0 0.5rem' }}>
+                  {chartData[0].date} – {chartData[chartData.length - 1].date} &nbsp;·&nbsp; {chartData.length} data points
+                </p>
+                <StockChart key={chartTimeframe} data={chartData} isPositive={isPositive} />
+              </>
             )}
           </div>
         )}
