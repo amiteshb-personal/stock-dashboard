@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import StockCard from './StockCard'
 import DetailPanel from './DetailPanel'
 import AlertPanel from './AlertPanel'
@@ -16,6 +16,22 @@ import {
 import './App.css'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
+
+const TIMEFRAMES = {
+  '1M':  { days: 42,   resolution: 'D' },
+  '3M':  { days: 100,  resolution: 'D' },
+  '1Y':  { days: 370,  resolution: 'W' },
+  '5Y':  { days: 1830, resolution: 'M' },
+  '10Y': { days: 3660, resolution: 'M' },
+}
+
+function getGridCols() {
+  const w = window.innerWidth
+  if (w <= 460) return 1
+  if (w <= 680) return 2
+  if (w <= 900) return 3
+  return 4
+}
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
 const GNEWS_KEY   = import.meta.env.VITE_GNEWS_KEY
@@ -121,6 +137,8 @@ function App() {
 
   const [selectedTicker, setSelectedTicker] = useState(null)
   const [activeTab, setActiveTab]           = useState('chart')
+  const [chartTimeframe, setChartTimeframe] = useState('1M')
+  const [gridCols, setGridCols]             = useState(() => getGridCols())
 
   const [chartData, setChartData]         = useState([])
   const [chartLoading, setChartLoading]   = useState(false)
@@ -217,13 +235,13 @@ function App() {
 
   // ── Chart data fetching ───────────────────────────────────────────────
 
-  async function fetchChartData(ticker) {
+  async function fetchChartData(ticker, timeframe = '1M') {
     setChartLoading(true)
     setChartError(null)
     setChartData([])
 
-    // Each ticker gets its own cache key, e.g. "chart_AAPL"
-    const cacheKey = `chart_${ticker}`
+    // Cache key includes timeframe so each range is stored independently
+    const cacheKey = `chart_${ticker}_${timeframe}`
     const cached = loadFromCache(cacheKey, CHART_CACHE_TTL_MS)
     if (cached) {
       setChartData(cached)
@@ -231,23 +249,29 @@ function App() {
       return
     }
 
+    const { days, resolution } = TIMEFRAMES[timeframe]
+
     try {
-      // Finnhub candle endpoint — 'D' means daily bars
       const to   = Math.floor(Date.now() / 1000)
-      const from = to - 60 * 60 * 24 * 42   // ~6 weeks back to guarantee 30 trading days
-      const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
+      const from = to - 60 * 60 * 24 * days
+      const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_KEY}`
       const res  = await fetch(url)
       const data = await res.json()
 
       if (data.s !== 'ok' || !data.c) throw new Error('No chart data returned.')
 
-      // data.t = array of timestamps, data.c = array of closing prices
-      const points = data.t.slice(-30).map((timestamp, i) => {
+      // Format date labels based on resolution granularity
+      const points = data.t.map((timestamp, i) => {
         const d = new Date(timestamp * 1000)
-        return {
-          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          price: data.c[data.c.length - 30 + i],
+        let date
+        if (resolution === 'D') {
+          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        } else if (resolution === 'W') {
+          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+        } else {
+          date = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
         }
+        return { date, price: data.c[i] }
       })
 
       saveToCache(cacheKey, points)
@@ -382,11 +406,17 @@ function App() {
     }
     setSelectedTicker(ticker)
     setActiveTab('chart')
-    fetchChartData(ticker)
+    setChartTimeframe('1M')
+    fetchChartData(ticker, '1M')
     fetchNews(ticker)
     // AI analysis is fetched lazily when the user clicks the AI tab
     setAnalysis(null)
     setAnalysisError(null)
+  }
+
+  function handleTimeframeChange(timeframe) {
+    setChartTimeframe(timeframe)
+    fetchChartData(selectedTicker, timeframe)
   }
 
   function handleTabChange(tab) {
@@ -563,8 +593,14 @@ function App() {
       fetchAllStocks(true)   // forceRefresh = true, bypasses cache
     }, POLL_INTERVAL_MS)
 
-    // Cleanup: cancel the interval when the component is removed from the page
-    return () => clearInterval(pollRef.current)
+    // Track window width so we know how many grid columns are showing
+    function handleResize() { setGridCols(getGridCols()) }
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      clearInterval(pollRef.current)
+      window.removeEventListener('resize', handleResize)
+    }
   }, [])
 
   const selectedStock = stocks.find(s => s.ticker === selectedTicker)
@@ -675,33 +711,48 @@ function App() {
             {addError && <p className="add-stock-error">{addError}</p>}
 
             <div className="grid">
-              {stocks.map(stock => (
-                <StockCard
-                  key={stock.ticker}
-                  stock={stock}
-                  onClick={() => handleCardClick(stock.ticker)}
-                  isSelected={selectedTicker === stock.ticker}
-                  onDelete={handleDeleteStock}
-                />
-              ))}
-            </div>
+              {(() => {
+                const selectedIndex = stocks.findIndex(s => s.ticker === selectedTicker)
+                // Index of the last card in the same row as the selected card
+                const insertAfterIndex = selectedIndex >= 0
+                  ? Math.min(
+                      Math.ceil((selectedIndex + 1) / gridCols) * gridCols - 1,
+                      stocks.length - 1
+                    )
+                  : -1
 
-            {selectedStock && (
-              <DetailPanel
-                stock={selectedStock}
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                chartData={chartData}
-                chartLoading={chartLoading}
-                chartError={chartError}
-                news={news}
-                newsLoading={newsLoading}
-                newsError={newsError}
-                analysis={analysis}
-                analysisLoading={analysisLoading}
-                analysisError={analysisError}
-              />
-            )}
+                return stocks.map((stock, i) => (
+                  <React.Fragment key={stock.ticker}>
+                    <StockCard
+                      stock={stock}
+                      onClick={() => handleCardClick(stock.ticker)}
+                      isSelected={selectedTicker === stock.ticker}
+                      onDelete={handleDeleteStock}
+                    />
+                    {i === insertAfterIndex && selectedStock && (
+                      <div className="grid-detail-slot">
+                        <DetailPanel
+                          stock={selectedStock}
+                          activeTab={activeTab}
+                          onTabChange={handleTabChange}
+                          chartData={chartData}
+                          chartLoading={chartLoading}
+                          chartError={chartError}
+                          news={news}
+                          newsLoading={newsLoading}
+                          newsError={newsError}
+                          analysis={analysis}
+                          analysisLoading={analysisLoading}
+                          analysisError={analysisError}
+                          chartTimeframe={chartTimeframe}
+                          onTimeframeChange={handleTimeframeChange}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))
+              })()}
+            </div>
           </>
         )}
       </main>

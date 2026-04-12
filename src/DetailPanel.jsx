@@ -2,6 +2,8 @@ import StockChart from './StockChart'
 import NewsPanel from './NewsPanel'
 import AIAnalysis from './AIAnalysis'
 
+const TIMEFRAME_LABELS = ['1M', '3M', '1Y', '5Y', '10Y']
+
 function DetailPanel({
   stock,
   activeTab,
@@ -15,6 +17,8 @@ function DetailPanel({
   analysis,
   analysisLoading,
   analysisError,
+  chartTimeframe,
+  onTimeframeChange,
 }) {
   const isPositive = parseFloat(stock.changePercent) >= 0
 
@@ -47,10 +51,23 @@ function DetailPanel({
       <div className="tab-content">
         {activeTab === 'chart' && (
           <div>
+            {/* Timeframe selector */}
+            <div className="timeframe-bar">
+              {TIMEFRAME_LABELS.map(tf => (
+                <button
+                  key={tf}
+                  className={`timeframe-btn ${chartTimeframe === tf ? 'timeframe-active' : ''}`}
+                  onClick={() => onTimeframeChange(tf)}
+                  disabled={chartLoading}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
             {chartLoading && (
               <div className="news-loading">
                 <div className="news-spinner"></div>
-                <span>Loading 30-day chart...</span>
+                <span>Loading chart…</span>
               </div>
             )}
             {chartError && <p className="news-error">{chartError}</p>}

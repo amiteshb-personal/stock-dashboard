@@ -179,8 +179,17 @@ body {
 /* ── Stock Grid ── */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
+}
+
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 680px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px) { .grid { grid-template-columns: 1fr; } }
+
+/* Inline detail panel slot — spans all columns */
+.grid-detail-slot {
+  grid-column: 1 / -1;
 }
 
 /* ── Stock Card ── */
@@ -358,12 +367,41 @@ body {
 
 /* ── Detail Panel ── */
 .detail-panel {
-  margin-top: 1.25rem;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
   overflow: hidden;
   animation: fadeIn 0.15s ease;
+}
+
+/* ── Timeframe bar ── */
+.timeframe-bar {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.timeframe-btn {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.timeframe-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.timeframe-btn.timeframe-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 /* ── Tab bar ── */

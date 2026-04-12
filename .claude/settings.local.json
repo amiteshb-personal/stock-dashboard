@@ -6,7 +6,19 @@
       "Read(//Users/amitbhushan/**)",
       "Read(//usr/local/**)",
       "Bash(npm install:*)",
-      "Skill(claude-api)"
+      "Skill(claude-api)",
+      "Bash(npm run:*)",
+      "Bash(/opt/homebrew/bin/npm run:*)",
+      "Bash(/Users/amitbhushan/.nvm/versions/node/v20.20.2/bin/npm run:*)",
+      "Bash(/usr/local/bin/npm run:*)",
+      "Bash(~/.nvm/versions/node/*/bin/npm run:*)",
+      "Bash(npx vite:*)",
+      "Bash(command -v node)",
+      "Bash(/opt/homebrew/bin/node --version)",
+      "Bash(export PATH=\"/Users/amitbhushan/.nvm/versions/node/v20.20.2/bin:$PATH\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
