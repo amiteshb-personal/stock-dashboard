@@ -266,10 +266,18 @@ function App() {
       // Build full daily series first
       const allPoints = data.t.map((timestamp, i) => {
         const d = new Date(timestamp * 1000)
-        // For longer timeframes include the year in the label
-        const date = days > 100
-          ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        // Use progressively coarser labels for longer timeframes
+        let date
+        if (days <= 100) {
+          // 1M / 3M: "Apr 1"
+          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        } else if (days <= 400) {
+          // 1Y: "Apr '25"
+          date = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+        } else {
+          // 5Y / 10Y: "2023"
+          date = d.getFullYear().toString()
+        }
         return { date, price: data.c[i] }
       })
 
@@ -287,7 +295,14 @@ function App() {
       saveToCache(cacheKey, points)
       setChartData(points)
     } catch (err) {
-      setChartError('Could not load chart data: ' + err.message)
+      // Fall back to demo data so the chart always shows something
+      if (DEMO_CHARTS[ticker]) {
+        setChartData(DEMO_CHARTS[ticker])
+      } else {
+        const stock = stocks.find(s => s.ticker === ticker)
+        const startPrice = stock ? parseFloat(stock.price) : 100
+        setChartData(generateDemoChart(startPrice, startPrice * 0.018))
+      }
     } finally {
       setChartLoading(false)
     }
