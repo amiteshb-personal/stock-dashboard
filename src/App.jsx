@@ -86,13 +86,7 @@ function generateDemoChart(startPrice, volatility) {
   return points
 }
 
-const DEMO_CHARTS = {
-  AAPL:  generateDemoChart(172, 2.5),
-  TSLA:  generateDemoChart(172, 6.0),
-  MSFT:  generateDemoChart(382, 3.5),
-  GOOGL: generateDemoChart(161, 3.0),
-  AMZN:  generateDemoChart(179, 3.5),
-}
+// No static demo charts — always generate dynamically so timeframe changes work correctly
 
 // How long cached data is considered fresh before we go back to the API
 const PRICE_CACHE_TTL_MS = 30 * 60 * 1000   // 30 minutes
@@ -243,7 +237,7 @@ function App() {
     setChartData([])
 
     // Cache key includes timeframe so each range is stored independently
-    const cacheKey = `chart_${ticker}_${timeframe}`
+    const cacheKey = `chart_v2_${ticker}_${timeframe}`
     const cached = loadFromCache(cacheKey, CHART_CACHE_TTL_MS)
     if (cached) {
       setChartData(cached)
@@ -295,14 +289,9 @@ function App() {
       saveToCache(cacheKey, points)
       setChartData(points)
     } catch (err) {
-      // Fall back to demo data so the chart always shows something
-      if (DEMO_CHARTS[ticker]) {
-        setChartData(DEMO_CHARTS[ticker])
-      } else {
-        const stock = stocks.find(s => s.ticker === ticker)
-        const startPrice = stock ? parseFloat(stock.price) : 100
-        setChartData(generateDemoChart(startPrice, startPrice * 0.018))
-      }
+      const stock = stocks.find(s => s.ticker === ticker)
+      const startPrice = stock ? parseFloat(stock.price) : 100
+      setChartData(generateDemoChart(startPrice, startPrice * 0.018))
     } finally {
       setChartLoading(false)
     }
