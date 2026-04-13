@@ -252,7 +252,12 @@ function App() {
     const { days, maxPoints } = TIMEFRAMES[timeframe]
 
     try {
-      const to   = Math.floor(Date.now() / 1000)
+      // Roll back to the most recent weekday so weekend calls don't get no_data
+      const now = new Date()
+      const day = now.getDay()
+      if (day === 0) now.setDate(now.getDate() - 2)  // Sunday → Friday
+      if (day === 6) now.setDate(now.getDate() - 1)  // Saturday → Friday
+      const to   = Math.floor(now.getTime() / 1000)
       const from = to - 60 * 60 * 24 * days
       // Always use daily ('D') — free tier doesn't support W or M resolution
       const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
