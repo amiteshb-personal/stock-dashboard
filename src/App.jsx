@@ -17,14 +17,13 @@ import './App.css'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
 
-// Always use daily resolution — free tier doesn't support W/M.
-// maxPoints controls how many data points end up in the chart (downsampled client-side).
+// Twelve Data intervals + output sizes per timeframe
 const TIMEFRAMES = {
-  '1M':  { days: 42,   maxPoints: 31  },
-  '3M':  { days: 100,  maxPoints: 65  },
-  '1Y':  { days: 370,  maxPoints: 52  },
-  '5Y':  { days: 1830, maxPoints: 60  },
-  '10Y': { days: 3660, maxPoints: 60  },
+  '1M':  { interval: '1day',   outputsize: 30  },
+  '3M':  { interval: '1day',   outputsize: 65  },
+  '1Y':  { interval: '1week',  outputsize: 52  },
+  '5Y':  { interval: '1month', outputsize: 60  },
+  '10Y': { interval: '1month', outputsize: 120 },
 }
 
 function getGridCols() {
@@ -35,8 +34,9 @@ function getGridCols() {
   return 4
 }
 
-const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const GNEWS_KEY   = import.meta.env.VITE_GNEWS_KEY
+const FINNHUB_KEY      = import.meta.env.VITE_FINNHUB_KEY
+const GNEWS_KEY        = import.meta.env.VITE_GNEWS_KEY
+const TWELVE_DATA_KEY  = import.meta.env.VITE_TWELVE_DATA_KEY
 
 const DEFAULT_WATCHLIST = [
   { ticker: 'AAPL', name: 'Apple Inc.' },
@@ -172,18 +172,18 @@ function App() {
 
   // ── Stock price fetching ──────────────────────────────────────────────
 
-  async function fetchStock(ticker) {
-    const url = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
-    const res = await fetch(url)
-    const data = await res.json()
-    // Finnhub returns 0s for all fields when the market is closed for an unknown symbol
-    if (!data.c) throw new Error(`No data returned for ${ticker}`)
+  // Fetch a single stock quote from Twelve Data (used when adding a stock)
+  async function fetchQuote(ticker) {
+    const url = `https://api.twelvedata.com/quote?symbol=${ticker}&apikey=${TWELVE_DATA_KEY}`
+    const res  = await fetch(url)
+    const q    = await res.json()
+    if (!q || q.status === 'error' || !q.close) throw new Error(q.message || `No data for ${ticker}`)
     return {
       ticker,
-      name: (watchlistRef.current.find(s => s.ticker === ticker) || {}).name || ticker,
-      price: data.c.toFixed(2),
-      change: data.d.toFixed(2),
-      changePercent: data.dp.toFixed(2),
+      name:          (watchlistRef.current.find(s => s.ticker === ticker) || {}).name || q.name || ticker,
+      price:         parseFloat(q.close).toFixed(2),
+      change:        parseFloat(q.change        || 0).toFixed(2),
+      changePercent: parseFloat(q.percent_change || 0).toFixed(2),
     }
   }
 
@@ -192,7 +192,6 @@ function App() {
     setLoading(true)
     setError(null)
 
-    // Check cache first (unless the user explicitly hit Refresh)
     if (!forceRefresh) {
       const cached = loadFromCache('stocks', PRICE_CACHE_TTL_MS)
       if (cached) {
@@ -203,29 +202,44 @@ function App() {
       }
     }
 
-    // Cache miss — go to the API
     setFromCache(false)
     setFromDemo(false)
     try {
-      // Finnhub allows 60 req/min so we can fetch all 5 at the same time
-      const results = await Promise.all(watchlistRef.current.map(s => fetchStock(s.ticker)))
+      // Twelve Data supports batch quotes — all tickers in one request
+      const tickers = watchlistRef.current.map(s => s.ticker).join(',')
+      const url  = `https://api.twelvedata.com/quote?symbol=${tickers}&apikey=${TWELVE_DATA_KEY}`
+      const res  = await fetch(url)
+      const data = await res.json()
+
+      // Single symbol → object directly; multiple → keyed by symbol
+      const quotes = watchlistRef.current.length === 1
+        ? { [watchlistRef.current[0].ticker]: data }
+        : data
+
+      const results = watchlistRef.current.map(s => {
+        const q = quotes[s.ticker]
+        if (!q || q.status === 'error' || !q.close) {
+          return { ticker: s.ticker, name: s.name, price: '—', change: '0.00', changePercent: '0.00' }
+        }
+        return {
+          ticker:        s.ticker,
+          name:          q.name || s.name,
+          price:         parseFloat(q.close).toFixed(2),
+          change:        parseFloat(q.change        || 0).toFixed(2),
+          changePercent: parseFloat(q.percent_change || 0).toFixed(2),
+        }
+      })
+
       setStocks(results)
       saveToCache('stocks', results)
       setLastUpdated(new Date().toLocaleTimeString())
-      // Check alert rules against the fresh prices
       runAlertChecks(results)
     } catch (err) {
-      // API failed — show all watchlist stocks with placeholder prices so nothing disappears
       const fallback = watchlistRef.current.map(s => ({
-        ticker: s.ticker,
-        name:   s.name,
-        price:  '—',
-        change: '0.00',
-        changePercent: '0.00',
+        ticker: s.ticker, name: s.name, price: '—', change: '0.00', changePercent: '0.00',
       }))
       setStocks(fallback)
       setFromDemo(true)
-      setError(null)
     } finally {
       setLoading(false)
     }
@@ -247,51 +261,28 @@ function App() {
       return
     }
 
-    const { days, maxPoints } = TIMEFRAMES[timeframe]
+    const { interval, outputsize } = TIMEFRAMES[timeframe]
 
     try {
-      // Roll back to the most recent weekday so weekend calls don't get no_data
-      const now = new Date()
-      const day = now.getDay()
-      if (day === 0) now.setDate(now.getDate() - 2)  // Sunday → Friday
-      if (day === 6) now.setDate(now.getDate() - 1)  // Saturday → Friday
-      const to   = Math.floor(now.getTime() / 1000)
-      const from = to - 60 * 60 * 24 * days
-      // Always use daily ('D') — free tier doesn't support W or M resolution
-      const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
+      const url  = `https://api.twelvedata.com/time_series?symbol=${ticker}&interval=${interval}&outputsize=${outputsize}&apikey=${TWELVE_DATA_KEY}`
       const res  = await fetch(url)
       const data = await res.json()
 
-      if (data.s !== 'ok' || !data.c) throw new Error('No chart data returned.')
+      if (data.status === 'error' || !data.values) throw new Error(data.message || 'No data')
 
-      // Build full daily series first
-      const allPoints = data.t.map((timestamp, i) => {
-        const d = new Date(timestamp * 1000)
-        // Use progressively coarser labels for longer timeframes
-        let date
-        if (days <= 100) {
-          // 1M / 3M: "Apr 1"
-          date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        } else if (days <= 400) {
-          // 1Y: "Apr '25"
-          date = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-        } else {
-          // 5Y / 10Y: "2023"
-          date = d.getFullYear().toString()
-        }
-        return { date, price: data.c[i] }
-      })
+      // Twelve Data returns newest-first — reverse to chronological order
+      const dateLabel = {
+        '1M':  d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        '3M':  d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        '1Y':  d => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        '5Y':  d => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        '10Y': d => d.getFullYear().toString(),
+      }[timeframe]
 
-      // Downsample so the chart doesn't get crowded for longer ranges
-      let points = allPoints
-      if (allPoints.length > maxPoints) {
-        const step = Math.ceil(allPoints.length / maxPoints)
-        points = allPoints.filter((_, i) => i % step === 0)
-        // Always include the most recent point
-        if (points[points.length - 1] !== allPoints[allPoints.length - 1]) {
-          points.push(allPoints[allPoints.length - 1])
-        }
-      }
+      const points = [...data.values].reverse().map(v => ({
+        date:  dateLabel(new Date(v.datetime)),
+        price: parseFloat(v.close),
+      }))
 
       saveToCache(cacheKey, points)
       setChartData(points)
@@ -461,24 +452,13 @@ function App() {
   async function handleAddFromPick(ticker, name) {
     if (watchlistRef.current.find(s => s.ticker === ticker)) return
     try {
-      const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
-      const quoteRes = await fetch(quoteUrl)
-      const quote    = await quoteRes.json()
-
       const newEntry = { ticker, name }
       const newList  = [...watchlistRef.current, newEntry]
       setWatchlist(newList)
       saveWatchlist(newList)
 
-      if (quote && quote.c) {
-        setStocks(prev => [...prev, {
-          ticker,
-          name,
-          price:         quote.c.toFixed(2),
-          change:        (quote.d  || 0).toFixed(2),
-          changePercent: (quote.dp || 0).toFixed(2),
-        }])
-      }
+      const quote = await fetchQuote(ticker)
+      setStocks(prev => [...prev, quote])
     } catch {
       // silently fail — stock just won't appear until next refresh
     }
@@ -496,36 +476,14 @@ function App() {
     setAddLoading(true)
     setAddError(null)
     try {
-      // Validate the ticker exists by hitting the Finnhub profile endpoint
-      const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`
-      const profileRes = await fetch(profileUrl)
-      const profile    = await profileRes.json()
-      if (!profile || !profile.name) {
-        throw new Error(`Could not find a stock with ticker "${ticker}". Check the symbol and try again.`)
-      }
+      // Validate + fetch quote from Twelve Data
+      const quote = await fetchQuote(ticker)
 
-      // Fetch the current quote so the card shows real data immediately
-      const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
-      const quoteRes = await fetch(quoteUrl)
-      const quote    = await quoteRes.json()
-
-      // Persist the new watchlist entry
-      const newEntry = { ticker, name: profile.name }
+      const newEntry = { ticker, name: quote.name !== ticker ? quote.name : ticker }
       const newList  = [...watchlistRef.current, newEntry]
       setWatchlist(newList)
       saveWatchlist(newList)
-
-      // Add the stock card with live price (or a placeholder if market is closed)
-      if (quote && quote.c) {
-        setStocks(prev => [...prev, {
-          ticker,
-          name:          profile.name,
-          price:         quote.c.toFixed(2),
-          change:        (quote.d || 0).toFixed(2),
-          changePercent: (quote.dp || 0).toFixed(2),
-        }])
-      }
-
+      setStocks(prev => [...prev, { ...quote, name: newEntry.name }])
       setAddInput('')
     } catch (err) {
       setAddError(err.message)
