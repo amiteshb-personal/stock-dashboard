@@ -211,6 +211,11 @@ function App() {
       const res  = await fetch(url)
       const data = await res.json()
 
+      // Top-level error means bad key / rate limit — surface it immediately
+      if (data.status === 'error' || data.code) {
+        throw new Error(data.message || 'Twelve Data error')
+      }
+
       // Single symbol → object directly; multiple → keyed by symbol
       const quotes = watchlistRef.current.length === 1
         ? { [watchlistRef.current[0].ticker]: data }
@@ -240,6 +245,7 @@ function App() {
       }))
       setStocks(fallback)
       setFromDemo(true)
+      setError('Price API: ' + err.message)
     } finally {
       setLoading(false)
     }
