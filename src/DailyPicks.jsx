@@ -21,8 +21,89 @@ function ScoreBar({ label, score }) {
   )
 }
 
+// ── Composite score badge ─────────────────────────────────────────────────────
+function ScoreBadge({ score }) {
+  const color =
+    score >= 65 ? '#00a86b' :
+    score >= 45 ? '#d97706' :
+    '#e53e3e'
+  return (
+    <div className="composite-score-badge" style={{ borderColor: color, color }}>
+      <span className="composite-score-value">{score}</span>
+      <span className="composite-score-denom">/100</span>
+    </div>
+  )
+}
+
+// ── Key metrics strip ─────────────────────────────────────────────────────────
+function MetricPill({ label, value, positive }) {
+  const color = positive === true ? 'var(--green)' : positive === false ? 'var(--red)' : 'var(--text-2)'
+  return (
+    <div className="metric-pill">
+      <span className="metric-pill-label">{label}</span>
+      <span className="metric-pill-value" style={{ color }}>{value}</span>
+    </div>
+  )
+}
+
+function MetricsStrip({ km }) {
+  if (!km) return null
+  const fmt = (v, decimals = 1) => v != null ? v.toFixed(decimals) : '—'
+  return (
+    <div className="metrics-strip">
+      {km.pe          != null && <MetricPill label="P/E"          value={`${fmt(km.pe)}x`}     />}
+      {km.evEbitda    != null && <MetricPill label="EV/EBITDA"    value={`${fmt(km.evEbitda)}x`} />}
+      {km.revenueGrowth != null && (
+        <MetricPill
+          label="Rev growth"
+          value={`${fmt(km.revenueGrowth)}%`}
+          positive={km.revenueGrowth > 5}
+        />
+      )}
+      {km.epsGrowth   != null && (
+        <MetricPill
+          label="EPS growth"
+          value={`${fmt(km.epsGrowth)}%`}
+          positive={km.epsGrowth > 5}
+        />
+      )}
+      {km.grossMargin != null && <MetricPill label="Gross margin" value={`${fmt(km.grossMargin)}%`} positive={km.grossMargin > 30} />}
+      {km.roe         != null && <MetricPill label="ROE"          value={`${fmt(km.roe)}%`}      positive={km.roe > 12} />}
+      {km.rsi         != null && (
+        <MetricPill
+          label="RSI"
+          value={fmt(km.rsi)}
+          positive={km.rsi >= 40 && km.rsi <= 65 ? true : km.rsi > 72 || km.rsi < 30 ? false : null}
+        />
+      )}
+      {km.analystUpside != null && (
+        <MetricPill
+          label="Analyst upside"
+          value={`${fmt(km.analystUpside)}%`}
+          positive={km.analystUpside > 10}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Quant signals list ────────────────────────────────────────────────────────
+function SignalsList({ signals }) {
+  if (!signals || signals.length === 0) return null
+  return (
+    <div className="signals-section">
+      <p className="signals-heading">Model signals</p>
+      <div className="signals-list">
+        {signals.map((s, i) => (
+          <span key={i} className="signal-tag">{s}</span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Individual pick card ───────────────────────────────────────────────────────
-function PickCard({ pick, isInWatchlist, onAdd, adding }) {
+function PickCard({ pick, isInWatchlist, onAdd }) {
   const confidenceColor = {
     high:   '#00a86b',
     medium: '#d97706',
@@ -31,21 +112,30 @@ function PickCard({ pick, isInWatchlist, onAdd, adding }) {
 
   return (
     <div className="pick-card">
-      {/* Header row */}
+      {/* Header: ticker + score + confidence */}
       <div className="pick-card-top">
-        <span className="pick-ticker">{pick.ticker}</span>
-        <span
-          className="pick-confidence"
-          style={{ color: confidenceColor, borderColor: confidenceColor, background: `${confidenceColor}12` }}
-        >
-          {pick.confidence} confidence
-        </span>
+        <div className="pick-card-top-left">
+          <span className="pick-ticker">{pick.ticker}</span>
+          <span
+            className="pick-confidence"
+            style={{ color: confidenceColor, borderColor: confidenceColor, background: `${confidenceColor}12` }}
+          >
+            {pick.confidence} confidence
+          </span>
+        </div>
+        <ScoreBadge score={pick.score} />
       </div>
 
       <p className="pick-name">{pick.name}</p>
 
-      {/* Why now */}
+      {/* Quantitative metrics strip */}
+      <MetricsStrip km={pick.keyMetrics} />
+
+      {/* Analyst narrative */}
       <p className="pick-why-now">{pick.whyNow}</p>
+
+      {/* Model signals */}
+      <SignalsList signals={pick.signals} />
 
       {/* Score bars */}
       <div className="pick-scores">
@@ -55,7 +145,7 @@ function PickCard({ pick, isInWatchlist, onAdd, adding }) {
 
       {/* Pros */}
       <div className="pick-pros-cons">
-        <p className="pick-pros-cons-heading pick-pros-heading">Pros</p>
+        <p className="pick-pros-cons-heading pick-pros-heading">Strengths</p>
         <ul className="pick-pros-cons-list">
           {pick.pros.map((p, i) => (
             <li key={i} className="pick-pro-item">
@@ -67,7 +157,7 @@ function PickCard({ pick, isInWatchlist, onAdd, adding }) {
 
       {/* Cons */}
       <div className="pick-pros-cons">
-        <p className="pick-pros-cons-heading pick-cons-heading">Cons</p>
+        <p className="pick-pros-cons-heading pick-cons-heading">Risks</p>
         <ul className="pick-pros-cons-list">
           {pick.cons.map((c, i) => (
             <li key={i} className="pick-con-item">
@@ -81,9 +171,9 @@ function PickCard({ pick, isInWatchlist, onAdd, adding }) {
       <button
         className={`pick-add-btn ${isInWatchlist ? 'pick-add-btn-added' : ''}`}
         onClick={() => !isInWatchlist && onAdd(pick.ticker, pick.name)}
-        disabled={isInWatchlist || adding}
+        disabled={isInWatchlist}
       >
-        {isInWatchlist ? '✓ In your watchlist' : adding ? 'Adding…' : '+ Add to watchlist'}
+        {isInWatchlist ? '✓ In your watchlist' : '+ Add to watchlist'}
       </button>
     </div>
   )
@@ -91,8 +181,6 @@ function PickCard({ pick, isInWatchlist, onAdd, adding }) {
 
 // ── Main DailyPicks component ─────────────────────────────────────────────────
 function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, onAddToWatchlist }) {
-  const addingRef = {}  // track per-ticker loading state (not worth a useState)
-
   function formatDate(dateStr) {
     if (!dateStr) return ''
     const d = new Date(dateStr)
@@ -124,13 +212,24 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
         </div>
       </div>
 
-      {/* Disclaimer banner */}
+      {/* Methodology banner */}
+      <div className="picks-methodology-banner">
+        <span className="picks-methodology-icon">◆</span>
+        <span>
+          <strong>Quantitative model.</strong> Stocks are scored across four equal-weight factors:
+          Valuation (P/E vs sector, EV/EBITDA), Growth (revenue &amp; EPS momentum),
+          Technical Momentum (RSI, MACD, SMA), and Quality (margins, ROE, leverage).
+          Picks are stable for 24 hours — the model re-runs once per day.
+        </span>
+      </div>
+
+      {/* Disclaimer */}
       <div className="picks-disclaimer-banner">
         <span className="picks-disclaimer-icon">⚠</span>
         <span>
-          <strong>Not financial advice.</strong> These picks are generated by AI from recent news headlines only —
-          not from financial statements, earnings, or professional research.
-          Scores are rough sentiment estimates, not predictions. Always do your own research before investing.
+          <strong>Not financial advice.</strong> Scores are generated by an automated model and
+          reviewed by AI. They reflect quantitative signals only, not forward-looking research
+          or insider knowledge. Always do your own due diligence before investing.
         </span>
       </div>
 
@@ -138,7 +237,7 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
       {loading && (
         <div className="picks-loading">
           <div className="news-spinner" />
-          <span>Claude is reading today's market headlines…</span>
+          <span>Running quantitative model across 30 large-caps… (~60-90 seconds)</span>
         </div>
       )}
 
@@ -160,35 +259,18 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
                 pick={pick}
                 isInWatchlist={watchlist.some(s => s.ticker === pick.ticker)}
                 onAdd={onAddToWatchlist}
-                adding={false}
               />
             ))}
           </div>
 
           {/* Footer */}
-          <div className="picks-footer">
-            {picks.sourceSummary && (
+          {picks.methodology && (
+            <div className="picks-footer">
               <p className="picks-mood">
-                <strong>Market mood:</strong> {picks.sourceSummary}
+                <strong>Method:</strong> {picks.methodology}
               </p>
-            )}
-            {picks.sources && picks.sources.length > 0 && (
-              <div className="picks-sources">
-                <p className="picks-sources-label">
-                  Based on {picks.newsCount}+ headlines
-                  {picks.feedCounts && (
-                    <span> — Finnhub: {picks.feedCounts.finnhub}, GNews: {picks.feedCounts.gnews}</span>
-                  )}
-                  {' '}from {picks.sources.length} sources:
-                </p>
-                <div className="picks-sources-list">
-                  {picks.sources.map(s => (
-                    <span key={s} className="picks-source-tag">{s}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </section>

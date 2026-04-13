@@ -1072,6 +1072,26 @@ body {
   margin-top: 1px;
 }
 
+/* ── Methodology banner ── */
+.picks-methodology-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(0, 168, 107, 0.04);
+  border-bottom: 1px solid rgba(0, 168, 107, 0.12);
+  font-size: 0.78rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.picks-methodology-icon {
+  color: var(--green);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* ── Loading / error ── */
 .picks-loading {
   display: flex;
@@ -1135,6 +1155,102 @@ body {
   justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.pick-card-top-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Composite score badge ── */
+.composite-score-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  border: 2px solid;
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.composite-score-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.composite-score-denom {
+  font-size: 0.65rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* ── Key metrics strip ── */
+.metrics-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: -0.2rem 0;
+}
+
+.metric-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.22rem 0.45rem;
+  min-width: 52px;
+}
+
+.metric-pill-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.metric-pill-value {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+/* ── Model signals ── */
+.signals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.signals-heading {
+  font-size: 0.63rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-3);
+}
+
+.signals-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.signal-tag {
+  font-size: 0.67rem;
+  color: var(--text-2);
+  background: var(--accent-dim);
+  border: 1px solid rgba(255, 91, 0, 0.15);
+  border-radius: 3px;
+  padding: 0.18rem 0.45rem;
+  line-height: 1.3;
 }
 
 .pick-ticker {
