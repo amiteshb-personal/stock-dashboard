@@ -85,15 +85,20 @@ async function fetchMetrics(ticker) {
   }
 }
 
-// Returns array of closing prices (up to 150 trading days)
+// Returns array of closing prices (up to ~150 trading days).
+// Finnhub returns no_data when `to` falls on a weekend, so we roll back to Friday.
 async function fetchCandles(ticker) {
-  const to   = Math.floor(Date.now() / 1000)
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0) now.setDate(now.getDate() - 2)       // Sunday  → Friday
+  else if (day === 6) now.setDate(now.getDate() - 1)  // Saturday → Friday
+  const to   = Math.floor(now.getTime() / 1000)
   const from = to - 220 * 24 * 60 * 60  // 220 calendar days ≈ 150 trading days
   try {
     const url  = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
     const res  = await fetch(url)
     const data = await res.json()
-    if (data.s !== 'ok' || !Array.isArray(data.c) || data.c.length < 26) return []
+    if (data.s !== 'ok' || !Array.isArray(data.c) || data.c.length < 14) return []
     return data.c  // array of daily close prices
   } catch {
     return []
@@ -348,7 +353,8 @@ export async function getDailyPicks(forceRefresh = false) {
         fetchMetrics(stock.ticker),
         fetchCandles(stock.ticker),
       ])
-      if (closes.length >= 26) {   // need at least 26 closes for MACD
+      // 14 closes = minimum for RSI; MACD silently returns null if fewer than 26
+      if (closes.length >= 14 || Object.keys(metrics).length > 5) {
         stockData.push({ ...stock, metrics, closes })
       }
     } catch {
@@ -357,8 +363,8 @@ export async function getDailyPicks(forceRefresh = false) {
     await sleep(2100)
   }
 
-  if (stockData.length < 3) {
-    throw new Error('Insufficient data from Finnhub. Check your API key or try again shortly.')
+  if (stockData.length === 0) {
+    throw new Error('No data returned from Finnhub. Check your API key or try again shortly.')
   }
 
   // ── Step 2: Score every stock ──────────────────────────────────────────────
