@@ -172,18 +172,18 @@ function App() {
 
   // ── Stock price fetching ──────────────────────────────────────────────
 
-  // Fetch a single stock quote from Twelve Data (used when adding a stock)
+  // Fetch a single stock quote from Finnhub (used when adding a stock)
   async function fetchQuote(ticker) {
-    const url = `https://api.twelvedata.com/quote?symbol=${ticker}&apikey=${TWELVE_DATA_KEY}`
+    const url  = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`
     const res  = await fetch(url)
-    const q    = await res.json()
-    if (!q || q.status === 'error' || !q.close) throw new Error(q.message || `No data for ${ticker}`)
+    const data = await res.json()
+    if (!data.c) throw new Error(`No data for ${ticker}`)
     return {
       ticker,
-      name:          (watchlistRef.current.find(s => s.ticker === ticker) || {}).name || q.name || ticker,
-      price:         parseFloat(q.close).toFixed(2),
-      change:        parseFloat(q.change        || 0).toFixed(2),
-      changePercent: parseFloat(q.percent_change || 0).toFixed(2),
+      name:          (watchlistRef.current.find(s => s.ticker === ticker) || {}).name || ticker,
+      price:         data.c.toFixed(2),
+      change:        (data.d  || 0).toFixed(2),
+      changePercent: (data.dp || 0).toFixed(2),
     }
   }
 
@@ -205,36 +205,8 @@ function App() {
     setFromCache(false)
     setFromDemo(false)
     try {
-      // Twelve Data supports batch quotes — all tickers in one request
-      const tickers = watchlistRef.current.map(s => s.ticker).join(',')
-      const url  = `https://api.twelvedata.com/quote?symbol=${tickers}&apikey=${TWELVE_DATA_KEY}`
-      const res  = await fetch(url)
-      const data = await res.json()
-
-      // Top-level error means bad key / rate limit — surface it immediately
-      if (data.status === 'error' || data.code) {
-        throw new Error(data.message || 'Twelve Data error')
-      }
-
-      // Single symbol → object directly; multiple → keyed by symbol
-      const quotes = watchlistRef.current.length === 1
-        ? { [watchlistRef.current[0].ticker]: data }
-        : data
-
-      const results = watchlistRef.current.map(s => {
-        const q = quotes[s.ticker]
-        if (!q || q.status === 'error' || !q.close) {
-          return { ticker: s.ticker, name: s.name, price: '—', change: '0.00', changePercent: '0.00' }
-        }
-        return {
-          ticker:        s.ticker,
-          name:          q.name || s.name,
-          price:         parseFloat(q.close).toFixed(2),
-          change:        parseFloat(q.change        || 0).toFixed(2),
-          changePercent: parseFloat(q.percent_change || 0).toFixed(2),
-        }
-      })
-
+      // Finnhub: 60 req/min — fetch all stocks in parallel
+      const results = await Promise.all(watchlistRef.current.map(s => fetchQuote(s.ticker)))
       setStocks(results)
       saveToCache('stocks', results)
       setLastUpdated(new Date().toLocaleTimeString())
