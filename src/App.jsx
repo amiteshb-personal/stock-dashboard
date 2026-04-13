@@ -205,8 +205,15 @@ function App() {
     setFromCache(false)
     setFromDemo(false)
     try {
-      // Finnhub: 60 req/min — fetch all stocks in parallel
-      const results = await Promise.all(watchlistRef.current.map(s => fetchQuote(s.ticker)))
+      // Finnhub: 60 req/min — fetch all in parallel; allSettled so one bad ticker
+      // doesn't wipe out prices for every other stock
+      const settled = await Promise.allSettled(watchlistRef.current.map(s => fetchQuote(s.ticker)))
+      const results = settled.map((r, i) =>
+        r.status === 'fulfilled'
+          ? r.value
+          : { ticker: watchlistRef.current[i].ticker, name: watchlistRef.current[i].name,
+              price: '—', change: '0.00', changePercent: '0.00' }
+      )
       setStocks(results)
       saveToCache('stocks', results)
       setLastUpdated(new Date().toLocaleTimeString())
@@ -217,7 +224,6 @@ function App() {
       }))
       setStocks(fallback)
       setFromDemo(true)
-      setError('Price API: ' + err.message)
     } finally {
       setLoading(false)
     }
