@@ -67,21 +67,25 @@ const DEMO_STOCKS = [
   { ticker: 'AMZN', name: 'Amazon.com, Inc.',   price: '182.20', change: '1.60',  changePercent: '0.89'  },
 ]
 
-// 30 days of fake-but-realistic price points per stock for the chart
-function generateDemoChart(startPrice, volatility) {
+// Generate a fake-but-realistic demo chart matching the requested timeframe
+function generateDemoChart(startPrice, volatility, timeframe = '1M') {
+  const config = {
+    '1M':  { totalDays: 42,   step: 1,  fmt: d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) },
+    '3M':  { totalDays: 100,  step: 1,  fmt: d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) },
+    '1Y':  { totalDays: 365,  step: 7,  fmt: d => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) },
+    '5Y':  { totalDays: 1825, step: 30, fmt: d => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) },
+    '10Y': { totalDays: 3650, step: 60, fmt: d => d.getFullYear().toString() },
+  }
+  const { totalDays, step, fmt } = config[timeframe] || config['1M']
   const points = []
   let price = startPrice
   const now = new Date()
-  for (let i = 29; i >= 0; i--) {
+  for (let i = totalDays; i >= 0; i -= step) {
     const d = new Date(now)
     d.setDate(now.getDate() - i)
-    // Skip weekends
-    if (d.getDay() === 0 || d.getDay() === 6) continue
-    price = price + (Math.random() - 0.48) * volatility
-    points.push({
-      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      price: parseFloat(price.toFixed(2)),
-    })
+    if (step === 1 && (d.getDay() === 0 || d.getDay() === 6)) continue
+    price = Math.max(1, price + (Math.random() - 0.48) * volatility * Math.sqrt(step))
+    points.push({ date: fmt(d), price: parseFloat(price.toFixed(2)) })
   }
   return points
 }
@@ -291,7 +295,7 @@ function App() {
     } catch (err) {
       const stock = stocks.find(s => s.ticker === ticker)
       const startPrice = stock ? parseFloat(stock.price) : 100
-      setChartData(generateDemoChart(startPrice, startPrice * 0.018))
+      setChartData(generateDemoChart(startPrice, startPrice * 0.018, timeframe))
     } finally {
       setChartLoading(false)
     }

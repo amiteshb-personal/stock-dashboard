@@ -68,7 +68,7 @@ function StockChart({ data, isPositive }) {
             tick={{ fill: '#aaaaaa', fontSize: 11 }}
             tickLine={false}
             axisLine={false}
-            tickFormatter={v => `$${v.toFixed(0)}`}
+            tickFormatter={v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
             width={55}
           />
 

@@ -17,10 +17,12 @@ function AboutModal({ onClose }) {
             <h3 className="about-heading">What it does</h3>
             <p className="about-text">
               A personal stock watchlist dashboard that lets you track real-time prices,
-              view 30-day price charts, read the latest company news, and get AI-powered
-              market analysis — all in one place. You can add any stock ticker to your
-              watchlist, set price alerts that notify you in your browser, and get a
-              daily shortlist of 3 stocks worth watching based on that day's news.
+              view price charts across five timeframes (1 month to 10 years), read the
+              latest company news, and get AI-powered market analysis — all in one place.
+              Click any stock tile and the chart panel opens inline, right below it.
+              You can add any ticker to your watchlist, set price alerts that notify you
+              in your browser, and get a daily AI shortlist of 3 stocks worth watching
+              based on that day's headlines.
             </p>
           </section>
 
@@ -28,11 +30,11 @@ function AboutModal({ onClose }) {
           <section className="about-section">
             <h3 className="about-heading">AI Daily Picks — how it works</h3>
             <p className="about-text">
-              Every day, the app pulls up to 50 recent headlines from Finnhub's news
-              aggregator — which itself draws from Reuters, MarketWatch, Yahoo Finance,
-              Seeking Alpha, and dozens of other financial sources. Those headlines are
-              sent to Claude, which identifies the 3 stocks receiving the most compelling
-              positive coverage and scores them on two dimensions:
+              Every day the app pulls up to 60 recent headlines from two independent
+              news feeds — Finnhub (Reuters, MarketWatch, Seeking Alpha, and many others)
+              and GNews (top business headlines + stock market search). Those headlines
+              are sent to Claude, which identifies the 3 stocks receiving the most
+              compelling positive coverage and scores them on two dimensions:
             </p>
             <ul className="about-source-item about-picks-list">
               <li>
@@ -113,6 +115,19 @@ function AboutModal({ onClose }) {
             </p>
           </section>
 
+          {/* Charts */}
+          <section className="about-section">
+            <h3 className="about-heading">Price charts</h3>
+            <p className="about-text">
+              Charts are powered by Finnhub's daily candle data. Five timeframes are
+              available — <strong>1M, 3M, 1Y, 5Y, 10Y</strong> — each fetched and
+              cached independently for 24 hours. Longer timeframes are downsampled
+              client-side to keep the chart readable. If live data is unavailable
+              (e.g. outside market hours or API rate limits), the chart falls back to
+              a simulated price series based on the stock's last known price.
+            </p>
+          </section>
+
           {/* Data sources */}
           <section className="about-section">
             <h3 className="about-heading">Data sources</h3>
@@ -120,17 +135,24 @@ function AboutModal({ onClose }) {
               <li className="about-source-item">
                 <span className="about-source-name">Finnhub</span>
                 <span className="about-source-desc">
-                  Real-time stock quotes, 30-day price history, company news, and the
-                  market-wide headline feed used for daily picks. Data refreshes every
-                  5 minutes automatically.
+                  Real-time stock quotes, price history (daily candles), company-specific
+                  news, and the broad market headline feed used for daily picks.
+                  Prices refresh automatically every 5 minutes.
+                </span>
+              </li>
+              <li className="about-source-item">
+                <span className="about-source-name">GNews</span>
+                <span className="about-source-desc">
+                  Supplements the daily picks with top business headlines and targeted
+                  stock market search results, helping diversify beyond any single outlet.
                 </span>
               </li>
               <li className="about-source-item">
                 <span className="about-source-name">Claude AI (Anthropic)</span>
                 <span className="about-source-desc">
-                  Powers both the per-stock AI Analysis tab (sentiment, signal, key points)
-                  and the Daily Picks feature (stock selection, scoring, pros/cons).
-                  Uses the Claude Haiku model for speed and cost efficiency.
+                  Powers both the per-stock AI Analysis tab (sentiment, signal, key
+                  points) and the Daily Picks feature (stock selection, scoring,
+                  pros/cons). Uses the Claude Haiku model for speed and cost efficiency.
                 </span>
               </li>
             </ul>
