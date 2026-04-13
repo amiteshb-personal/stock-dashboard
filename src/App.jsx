@@ -57,15 +57,6 @@ function saveWatchlist(list) {
   localStorage.setItem('watchlist', JSON.stringify(list))
 }
 
-// Shown when the API is rate-limited and there's no cache yet.
-// Prices are approximate — just enough to make the UI usable during development.
-const DEMO_STOCKS = [
-  { ticker: 'AAPL', name: 'Apple Inc.',        price: '169.00', change: '-1.23', changePercent: '-0.72' },
-  { ticker: 'TSLA', name: 'Tesla, Inc.',        price: '177.50', change: '3.40',  changePercent: '1.95'  },
-  { ticker: 'MSFT', name: 'Microsoft Corp.',    price: '378.90', change: '-2.10', changePercent: '-0.55' },
-  { ticker: 'GOOGL', name: 'Alphabet Inc.',     price: '163.40', change: '0.85',  changePercent: '0.52'  },
-  { ticker: 'AMZN', name: 'Amazon.com, Inc.',   price: '182.20', change: '1.60',  changePercent: '0.89'  },
-]
 
 // Generate a fake-but-realistic demo chart matching the requested timeframe
 function generateDemoChart(startPrice, volatility, timeframe = '1M') {
@@ -224,8 +215,15 @@ function App() {
       // Check alert rules against the fresh prices
       runAlertChecks(results)
     } catch (err) {
-      // API failed (likely rate limited) — fall back to demo data so the UI still works
-      setStocks(DEMO_STOCKS)
+      // API failed — show all watchlist stocks with placeholder prices so nothing disappears
+      const fallback = watchlistRef.current.map(s => ({
+        ticker: s.ticker,
+        name:   s.name,
+        price:  '—',
+        change: '0.00',
+        changePercent: '0.00',
+      }))
+      setStocks(fallback)
       setFromDemo(true)
       setError(null)
     } finally {
