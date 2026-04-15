@@ -15,8 +15,6 @@ import {
 } from './alerts.js'
 import './App.css'
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000   // re-fetch prices every 5 minutes
-
 // Twelve Data intervals + output sizes per timeframe
 const TIMEFRAMES = {
   '1M':  { interval: '1day',   outputsize: 30  },
@@ -158,9 +156,6 @@ function App() {
   const [notifGranted, setNotifGranted] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
   )
-  // useRef stores the polling interval ID so we can cancel it on cleanup
-  const pollRef = useRef(null)
-
   // Unread count — alerts that haven't been seen yet
   const unreadCount = alertHistory.filter(h => !h.read).length
 
@@ -544,17 +539,11 @@ function App() {
     fetchAllStocks()
     fetchPicks()   // load daily picks on startup (uses cache if fresh)
 
-    // Poll for fresh prices every 5 minutes to check alerts silently
-    pollRef.current = setInterval(() => {
-      fetchAllStocks(true)   // forceRefresh = true, bypasses cache
-    }, POLL_INTERVAL_MS)
-
     // Track window width so we know how many grid columns are showing
     function handleResize() { setGridCols(getGridCols()) }
     window.addEventListener('resize', handleResize)
 
     return () => {
-      clearInterval(pollRef.current)
       window.removeEventListener('resize', handleResize)
     }
   }, [])
@@ -573,9 +562,9 @@ function App() {
           {fromCache && !fromDemo && (
             <span className="cache-badge">Cached</span>
           )}
-          {lastUpdated && !fromCache && !fromDemo && (
-            <span className="last-updated">Updated: {lastUpdated}</span>
-          )}
+          <span className="last-updated">
+            {lastUpdated ? `Updated: ${lastUpdated} — ` : ''}Hit Refresh for latest prices
+          </span>
           {/* Bell button — opens/closes the alerts panel */}
           <button className="about-btn" onClick={() => setAboutOpen(true)}>About</button>
           <button className="bell-btn" onClick={handleOpenAlerts} title="Alerts">

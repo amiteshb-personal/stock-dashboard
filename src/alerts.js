@@ -52,23 +52,50 @@ export function checkRulesForStock(stock, rules) {
   return triggered
 }
 
+const ALERT_COOLDOWN_MS = 60 * 60 * 1000  // 1 hour
+
+function loadAlertCooldowns() {
+  try {
+    return JSON.parse(localStorage.getItem('alertCooldowns') || '{}')
+  } catch { return {} }
+}
+
+function saveAlertCooldowns(cooldowns) {
+  localStorage.setItem('alertCooldowns', JSON.stringify(cooldowns))
+}
+
 // Check all stocks against all rules.
 // Returns an array of alert history items ready to store.
+// Each rule+ticker combination can only fire once per hour.
 export function checkAllAlerts(stocks, rules) {
-  const fired = []
+  const fired     = []
+  const cooldowns = loadAlertCooldowns()
+  const now       = Date.now()
 
   for (const stock of stocks) {
     const messages = checkRulesForStock(stock, rules)
     for (const message of messages) {
+      // Find the rule that produced this message so we can key the cooldown
+      const rule = rules.find(r =>
+        (r.ticker === 'ANY' || r.ticker === stock.ticker)
+      )
+      const cooldownKey = `${stock.ticker}_${rule?.id || message.slice(0, 40)}`
+      const lastFired   = cooldowns[cooldownKey] || 0
+
+      if (now - lastFired < ALERT_COOLDOWN_MS) continue  // still cooling down
+
+      cooldowns[cooldownKey] = now
       fired.push({
         id:      crypto.randomUUID(),
         ticker:  stock.ticker,
         message,
-        firedAt: Date.now(),
+        firedAt: now,
         read:    false,
       })
     }
   }
+
+  if (fired.length > 0) saveAlertCooldowns(cooldowns)
 
   return fired
 }
