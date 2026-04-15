@@ -75,6 +75,28 @@ body {
   color: var(--text-3);
 }
 
+/* ── Staleness banner ── */
+.staleness-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: #fff8e1;
+  border: 1.5px solid #f5c842;
+  border-radius: var(--radius);
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.75rem;
+  font-size: 0.92rem;
+  color: #7a5c00;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.staleness-banner__icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  color: #c49200;
+}
+
 .demo-badge {
   font-size: 0.68rem;
   font-weight: 600;

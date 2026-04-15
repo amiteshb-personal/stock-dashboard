@@ -562,9 +562,9 @@ function App() {
           {fromCache && !fromDemo && (
             <span className="cache-badge">Cached</span>
           )}
-          <span className="last-updated">
-            {lastUpdated ? `Updated: ${lastUpdated} — ` : ''}Hit Refresh for latest prices
-          </span>
+          {lastUpdated && (
+            <span className="last-updated">Updated: {lastUpdated}</span>
+          )}
           {/* Bell button — opens/closes the alerts panel */}
           <button className="about-btn" onClick={() => setAboutOpen(true)}>About</button>
           <button className="bell-btn" onClick={handleOpenAlerts} title="Alerts">
@@ -578,6 +578,16 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* ── Staleness banner ── */}
+      <div className="staleness-banner">
+        <span className="staleness-banner__icon">ℹ</span>
+        <span>
+          Stock information current as of{' '}
+          <strong>{lastUpdated || 'page load'}</strong>.
+          {' '}Please hit <strong>Refresh</strong> to obtain updated information.
+        </span>
+      </div>
 
       {/* Alert panel — slides in below the header when bell is clicked */}
       {alertsOpen && (
