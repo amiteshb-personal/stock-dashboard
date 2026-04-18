@@ -6,11 +6,12 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v6'
+const CACHE_KEY   = 'daily_picks_v7'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
-// ── Universe: 30 large-cap US stocks across 7 sectors ────────────────────────
+// ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
 const UNIVERSE = [
+  // Technology — large cap
   { ticker: 'AAPL',  name: 'Apple Inc.',              sector: 'Technology'  },
   { ticker: 'MSFT',  name: 'Microsoft Corp.',          sector: 'Technology'  },
   { ticker: 'GOOGL', name: 'Alphabet Inc.',            sector: 'Technology'  },
@@ -19,39 +20,63 @@ const UNIVERSE = [
   { ticker: 'AMD',   name: 'Advanced Micro Devices',   sector: 'Technology'  },
   { ticker: 'ORCL',  name: 'Oracle Corp.',             sector: 'Technology'  },
   { ticker: 'CRM',   name: 'Salesforce Inc.',          sector: 'Technology'  },
+  // Technology — high-growth
+  { ticker: 'CRWD',  name: 'CrowdStrike Holdings',     sector: 'Technology'  },
+  { ticker: 'DDOG',  name: 'Datadog Inc.',             sector: 'Technology'  },
+  { ticker: 'SNOW',  name: 'Snowflake Inc.',           sector: 'Technology'  },
+  { ticker: 'PLTR',  name: 'Palantir Technologies',    sector: 'Technology'  },
+  { ticker: 'NET',   name: 'Cloudflare Inc.',          sector: 'Technology'  },
+  { ticker: 'MELI',  name: 'MercadoLibre Inc.',        sector: 'Technology'  },
+  { ticker: 'TTD',   name: 'The Trade Desk',           sector: 'Technology'  },
+  // Finance
   { ticker: 'JPM',   name: 'JPMorgan Chase',           sector: 'Finance'     },
-  { ticker: 'BAC',   name: 'Bank of America',          sector: 'Finance'     },
   { ticker: 'GS',    name: 'Goldman Sachs',            sector: 'Finance'     },
   { ticker: 'V',     name: 'Visa Inc.',                sector: 'Finance'     },
   { ticker: 'MA',    name: 'Mastercard Inc.',          sector: 'Finance'     },
-  { ticker: 'UNH',   name: 'UnitedHealth Group',       sector: 'Healthcare'  },
+  { ticker: 'COIN',  name: 'Coinbase Global',          sector: 'Finance'     },
+  // Healthcare — high-growth
   { ticker: 'LLY',   name: 'Eli Lilly & Co.',          sector: 'Healthcare'  },
   { ticker: 'ABBV',  name: 'AbbVie Inc.',              sector: 'Healthcare'  },
-  { ticker: 'MRK',   name: 'Merck & Co.',              sector: 'Healthcare'  },
-  { ticker: 'TMO',   name: 'Thermo Fisher Scientific', sector: 'Healthcare'  },
-  { ticker: 'JNJ',   name: 'Johnson & Johnson',        sector: 'Healthcare'  },
-  { ticker: 'WMT',   name: 'Walmart Inc.',             sector: 'Consumer'    },
-  { ticker: 'COST',  name: 'Costco Wholesale',         sector: 'Consumer'    },
-  { ticker: 'HD',    name: 'Home Depot Inc.',          sector: 'Consumer'    },
-  { ticker: 'KO',    name: 'Coca-Cola Co.',            sector: 'Consumer'    },
-  { ticker: 'PG',    name: 'Procter & Gamble',         sector: 'Consumer'    },
+  { ticker: 'ISRG',  name: 'Intuitive Surgical',       sector: 'Healthcare'  },
+  { ticker: 'DXCM',  name: 'DexCom Inc.',              sector: 'Healthcare'  },
+  { ticker: 'RXRX',  name: 'Recursion Pharmaceuticals',sector: 'Healthcare'  },
+  // Consumer — growth-oriented
+  { ticker: 'AMZN',  name: 'Amazon.com Inc.',          sector: 'Consumer'    },
+  { ticker: 'TSLA',  name: 'Tesla Inc.',               sector: 'Consumer'    },
+  { ticker: 'SHOP',  name: 'Shopify Inc.',             sector: 'Consumer'    },
+  { ticker: 'DUOL',  name: 'Duolingo Inc.',            sector: 'Consumer'    },
+  // Energy — transition + growth
   { ticker: 'XOM',   name: 'ExxonMobil Corp.',         sector: 'Energy'      },
-  { ticker: 'CVX',   name: 'Chevron Corp.',            sector: 'Energy'      },
-  { ticker: 'COP',   name: 'ConocoPhillips',           sector: 'Energy'      },
+  { ticker: 'FSLR',  name: 'First Solar Inc.',         sector: 'Energy'      },
+  { ticker: 'ENPH',  name: 'Enphase Energy',           sector: 'Energy'      },
+  // Industrial / Defense
   { ticker: 'CAT',   name: 'Caterpillar Inc.',         sector: 'Industrial'  },
-  { ticker: 'HON',   name: 'Honeywell International',  sector: 'Industrial'  },
+  { ticker: 'GE',    name: 'GE Aerospace',             sector: 'Industrial'  },
+  { ticker: 'AXON',  name: 'Axon Enterprise',          sector: 'Industrial'  },
+  // Media / Communication
   { ticker: 'NFLX',  name: 'Netflix Inc.',             sector: 'Media'       },
+  { ticker: 'SPOT',  name: 'Spotify Technology',       sector: 'Media'       },
+  { ticker: 'RBLX',  name: 'Roblox Corp.',             sector: 'Media'       },
+  // AI / Infrastructure
+  { ticker: 'SMCI',  name: 'Super Micro Computer',     sector: 'Technology'  },
+  { ticker: 'ARM',   name: 'Arm Holdings',             sector: 'Technology'  },
+  { ticker: 'IONQ',  name: 'IonQ Inc.',                sector: 'Technology'  },
+  // Fintech / Payments
+  { ticker: 'SQ',    name: 'Block Inc.',               sector: 'Finance'     },
+  { ticker: 'AFRM',  name: 'Affirm Holdings',          sector: 'Finance'     },
+  { ticker: 'HOOD',  name: 'Robinhood Markets',        sector: 'Finance'     },
+  { ticker: 'SOFI',  name: 'SoFi Technologies',        sector: 'Finance'     },
 ]
 
 // Sector-typical P/E medians used for relative valuation scoring
 const SECTOR_PE = {
-  Technology:  28,
-  Finance:     14,
-  Healthcare:  22,
-  Consumer:    24,
-  Energy:      12,
-  Industrial:  20,
-  Media:       25,
+  Technology:  35,
+  Finance:     18,
+  Healthcare:  28,
+  Consumer:    30,
+  Energy:      14,
+  Industrial:  22,
+  Media:       30,
 }
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
@@ -231,51 +256,53 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   }
   score += Math.max(0, Math.min(val, 25))
 
-  // ── Factor 2: Growth (0–25 pts) ───────────────────────────────────────────
+  // ── Factor 2: Growth (0–35 pts, up-weighted for growth names) ───────────────
   let growth = 0
   const revG = m.revenueGrowthTTMYoy ?? null  // decimal: 0.15 = 15%
   const epsG = m.epsGrowthTTMYoy ?? null
 
   if (revG != null) {
     const pct = revG * 100
-    if      (pct > 25) { growth += 12; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
-    else if (pct > 15) { growth += 9  }
-    else if (pct > 7)  { growth += 6  }
+    if      (pct > 40) { growth += 18; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY — hypergrowth`) }
+    else if (pct > 25) { growth += 15; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 15) { growth += 11 }
+    else if (pct > 7)  { growth += 7  }
     else if (pct > 2)  { growth += 3  }
-    else if (pct < -5) { growth -= 3  }  // shrinking revenue is negative
+    else if (pct < -5) { growth -= 3  }
   }
   if (epsG != null) {
     const pct = epsG * 100
-    if      (pct > 30) { growth += 13; signals.push(`EPS growth ${pct.toFixed(1)}% YoY`) }
+    if      (pct > 50) { growth += 17; signals.push(`EPS growth ${pct.toFixed(1)}% YoY — accelerating earnings`) }
+    else if (pct > 30) { growth += 13; signals.push(`EPS growth ${pct.toFixed(1)}% YoY`) }
     else if (pct > 20) { growth += 9  }
     else if (pct > 10) { growth += 6  }
     else if (pct > 3)  { growth += 3  }
     else if (pct < -10){ growth -= 3  }
   }
-  score += Math.max(0, Math.min(growth, 25))
+  score += Math.max(0, Math.min(growth, 35))
 
-  // ── Factor 3: Momentum (0–25 pts) ─────────────────────────────────────────
+  // ── Factor 3: Momentum (0–30 pts, up-weighted) ────────────────────────────
   let mom = 0
   const rsi   = calcRSI(closes)
   const { macd, crossedAboveZero } = calcMACD(closes)
   const sma50 = calcSMA(closes, 50)
 
   if (rsi != null) {
-    if      (rsi >= 50 && rsi <= 65)  { mom += 10; signals.push(`RSI ${rsi.toFixed(1)} — healthy upward momentum`) }
-    else if (rsi >= 40 && rsi <  50)  { mom += 7  }
-    else if (rsi >= 30 && rsi <  40)  { mom += 4  }
-    else if (rsi >= 65 && rsi <= 72)  { mom += 5  }
-    else if (rsi  > 25 && rsi <  30)  { mom += 3; signals.push(`RSI ${rsi.toFixed(1)} — oversold, bounce potential`) }
-    // RSI > 72 (overbought) or < 25 (potential breakdown): 0 pts
+    if      (rsi >= 55 && rsi <= 70)  { mom += 12; signals.push(`RSI ${rsi.toFixed(1)} — strong upward momentum`) }
+    else if (rsi >= 50 && rsi <  55)  { mom += 9; signals.push(`RSI ${rsi.toFixed(1)} — healthy upward momentum`) }
+    else if (rsi >= 40 && rsi <  50)  { mom += 6  }
+    else if (rsi >= 30 && rsi <  40)  { mom += 3  }
+    else if (rsi  > 70 && rsi <= 78)  { mom += 5  }  // strong trend, still buying
+    else if (rsi  > 25 && rsi <  30)  { mom += 2; signals.push(`RSI ${rsi.toFixed(1)} — oversold, bounce potential`) }
   }
-  if (crossedAboveZero)              { mom += 8; signals.push('MACD bullish zero-line crossover') }
-  else if (macd != null && macd > 0) { mom += 4; signals.push('MACD positive') }
+  if (crossedAboveZero)              { mom += 10; signals.push('MACD bullish zero-line crossover') }
+  else if (macd != null && macd > 0) { mom += 5; signals.push('MACD positive') }
   if (currentPrice && sma50 != null) {
-    if (currentPrice > sma50 * 1.02)       { mom += 7; signals.push(`Price ${((currentPrice/sma50 - 1)*100).toFixed(1)}% above 50-day SMA`) }
-    else if (currentPrice > sma50 * 0.99)  { mom += 3 }
-    // below SMA50: 0 pts
+    if      (currentPrice > sma50 * 1.05) { mom += 8; signals.push(`Price ${((currentPrice/sma50 - 1)*100).toFixed(1)}% above 50-day SMA — strong trend`) }
+    else if (currentPrice > sma50 * 1.02) { mom += 5; signals.push(`Price ${((currentPrice/sma50 - 1)*100).toFixed(1)}% above 50-day SMA`) }
+    else if (currentPrice > sma50 * 0.99) { mom += 2 }
   }
-  score += Math.max(0, Math.min(mom, 25))
+  score += Math.max(0, Math.min(mom, 30))
 
   // ── Factor 4: Quality (0–25 pts) ──────────────────────────────────────────
   let qual = 0
@@ -303,7 +330,7 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   }
   score += Math.max(0, Math.min(qual, 25))
 
-  return { score: Math.round(Math.max(0, Math.min(score, 100))), signals, currentPrice }
+  return { score: Math.round(Math.max(0, Math.min(score, 115))), signals, currentPrice }
 }
 
 // ── Analyst overlay (up to +10 pts bonus) ─────────────────────────────────────
@@ -330,8 +357,8 @@ function analystBonus(priceTarget, rec, currentPrice) {
 
 // ── Confidence: how much data-driven signal is behind the score ───────────────
 function deriveConfidence(totalScore, signalCount) {
-  if (totalScore >= 65 && signalCount >= 4) return 'high'
-  if (totalScore >= 45 && signalCount >= 2) return 'medium'
+  if (totalScore >= 55 && signalCount >= 3) return 'high'
+  if (totalScore >= 38 && signalCount >= 2) return 'medium'
   return 'low'
 }
 
@@ -342,7 +369,7 @@ export async function getDailyPicks(forceRefresh = false) {
     if (cached) return { ...cached, fromCache: true }
   }
 
-  // ── Step 1: Fetch metrics + candles for all 30 stocks ─────────────────────
+  // ── Step 1: Fetch metrics + candles for all stocks ────────────────────────
   // Finnhub free tier: 60 calls/min.
   // We fetch 2 calls per stock (metrics + candles) sequentially,
   // with a 2.1-second gap between stocks → ~57 calls/min, safely within limit.
@@ -392,7 +419,7 @@ export async function getDailyPicks(forceRefresh = false) {
   const finalTop5 = top5.map(stock => {
     const a = analystMap[stock.ticker] ?? {}
     const { bonus, bonusSignals } = analystBonus(a.priceTarget, a.rec, stock.currentPrice)
-    const totalScore = Math.min(stock.score + bonus, 100)
+    const totalScore = Math.min(stock.score + bonus, 125)
     const allSignals = [...stock.signals, ...bonusSignals]
     const confidence = deriveConfidence(totalScore, allSignals.length)
     return {
