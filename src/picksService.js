@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v8'
+const CACHE_KEY   = 'daily_picks_v9'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
@@ -204,12 +204,15 @@ function calcMACD(prices) {
   }
 }
 
-// If TTM growth is >3x the 3Y rate and >150%, treat as a base-period artifact
-function sanitiseGrowth(ttm, threeY) {
+// Cross-validate TTM growth against 3Y rate when available; otherwise apply
+// absolute caps — no real large/mid-cap has >200% revenue or >500% EPS growth.
+function sanitiseGrowth(ttm, threeY, { revCap = 2.0, epsCap = 5.0 } = {}) {
   if (ttm == null) return null
   if (threeY != null && Math.abs(ttm) > Math.abs(threeY) * 3 && Math.abs(ttm) > 1.5) {
     return threeY
   }
+  const cap = epsCap  // caller passes correct cap per metric type
+  if (Math.abs(ttm) > cap) return null  // implausible — discard rather than mislead
   return ttm
 }
 
@@ -274,8 +277,8 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   const epsGttm = m.epsGrowthTTMYoy      ?? null
   const epsG3y  = m.epsGrowthTTMYoy3Y    ?? m.epsGrowth3Y ?? null
 
-  const revG = sanitiseGrowth(revGttm, revG3y)
-  const epsG = sanitiseGrowth(epsGttm, epsG3y)
+  const revG = sanitiseGrowth(revGttm, revG3y, { epsCap: 2.0 })   // >200% rev = artifact
+  const epsG = sanitiseGrowth(epsGttm, epsG3y, { epsCap: 5.0 })   // >500% EPS = artifact
 
   if (revG != null) {
     const pct = revG * 100
@@ -456,8 +459,8 @@ export async function getDailyPicks(forceRefresh = false) {
   const stockSummaries = top3.map(s => {
     const m      = s.metrics
     const pe      = (m.peBasicExclExtraTTM ?? m.peTTM ?? null)
-    const _revG   = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null)
-    const _epsG   = sanitiseGrowth(m.epsGrowthTTMYoy ?? null, m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null)
+    const _revG   = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null, { epsCap: 2.0 })
+    const _epsG   = sanitiseGrowth(m.epsGrowthTTMYoy ?? null, m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null, { epsCap: 5.0 })
     const revG    = _revG != null ? (_revG * 100).toFixed(1) : 'N/A'
     const epsG    = _epsG != null ? (_epsG * 100).toFixed(1) : 'N/A'
     const margin = m.grossMarginTTM      != null ? m.grossMarginTTM.toFixed(1)  : 'N/A'
