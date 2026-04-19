@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v7'
+const CACHE_KEY   = 'daily_picks_v8'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
@@ -204,6 +204,15 @@ function calcMACD(prices) {
   }
 }
 
+// If TTM growth is >3x the 3Y rate and >150%, treat as a base-period artifact
+function sanitiseGrowth(ttm, threeY) {
+  if (ttm == null) return null
+  if (threeY != null && Math.abs(ttm) > Math.abs(threeY) * 3 && Math.abs(ttm) > 1.5) {
+    return threeY
+  }
+  return ttm
+}
+
 // ── Multi-factor scoring (0–100) ──────────────────────────────────────────────
 // Four equal factors of 25 pts each:
 //   Valuation   — P/E vs sector, EV/EBITDA, 52-week position
@@ -257,9 +266,16 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   score += Math.max(0, Math.min(val, 25))
 
   // ── Factor 2: Growth (0–35 pts, up-weighted for growth names) ───────────────
+  // Cross-validate TTM growth against 3Y average to filter base-period artifacts.
+  // If TTM is >3x the 3Y rate, it's almost certainly a distortion — fall back to 3Y.
   let growth = 0
-  const revG = m.revenueGrowthTTMYoy ?? null  // decimal: 0.15 = 15%
-  const epsG = m.epsGrowthTTMYoy ?? null
+  const revGttm = m.revenueGrowthTTMYoy  ?? null  // decimal: 0.15 = 15%
+  const revG3y  = m.revenueGrowth3Y      ?? null
+  const epsGttm = m.epsGrowthTTMYoy      ?? null
+  const epsG3y  = m.epsGrowthTTMYoy3Y    ?? m.epsGrowth3Y ?? null
+
+  const revG = sanitiseGrowth(revGttm, revG3y)
+  const epsG = sanitiseGrowth(epsGttm, epsG3y)
 
   if (revG != null) {
     const pct = revG * 100
@@ -439,9 +455,11 @@ export async function getDailyPicks(forceRefresh = false) {
 
   const stockSummaries = top3.map(s => {
     const m      = s.metrics
-    const pe     = (m.peBasicExclExtraTTM ?? m.peTTM ?? null)
-    const revG   = m.revenueGrowthTTMYoy != null ? (m.revenueGrowthTTMYoy * 100).toFixed(1) : 'N/A'
-    const epsG   = m.epsGrowthTTMYoy     != null ? (m.epsGrowthTTMYoy     * 100).toFixed(1) : 'N/A'
+    const pe      = (m.peBasicExclExtraTTM ?? m.peTTM ?? null)
+    const _revG   = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null)
+    const _epsG   = sanitiseGrowth(m.epsGrowthTTMYoy ?? null, m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null)
+    const revG    = _revG != null ? (_revG * 100).toFixed(1) : 'N/A'
+    const epsG    = _epsG != null ? (_epsG * 100).toFixed(1) : 'N/A'
     const margin = m.grossMarginTTM      != null ? m.grossMarginTTM.toFixed(1)  : 'N/A'
     const roe    = m.roeAnnual           != null ? m.roeAnnual.toFixed(1)       : 'N/A'
     const de     = m.totalDebtToEquityAnnual != null ? m.totalDebtToEquityAnnual.toFixed(2) : 'N/A'
