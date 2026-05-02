@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v9'
+const CACHE_KEY   = 'daily_picks_v10'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
@@ -216,22 +216,22 @@ function sanitiseGrowth(ttm, threeY, { revCap = 2.0, epsCap = 5.0 } = {}) {
   return ttm
 }
 
-// ── Multi-factor scoring (0–100) ──────────────────────────────────────────────
-// Four equal factors of 25 pts each:
-//   Valuation   — P/E vs sector, EV/EBITDA, 52-week position
-//   Growth      — revenue YoY, EPS YoY
-//   Momentum    — RSI zone, MACD, price vs SMA50
-//   Quality     — gross margin, ROE, leverage
+// ── Long-term growth scoring (max ~100 pts + analyst bonus) ──────────────────
+//
+// Philosophy: find stocks with the best chance of significant long-term appreciation.
+// High P/E is not a disqualifier — a company growing 40% a year is cheap at 80x.
+// Scoring rewards: fast revenue growth, expanding margins, strong price momentum,
+// high gross margins (pricing power / scalability), and ROE (capital efficiency).
+// It does NOT penalise high P/E or reward near-52-week-lows (mean-reversion is not
+// the same as long-term growth).
 //
 // Finnhub metric field conventions:
-//   peBasicExclExtraTTM  → P/E (trailing 12 months)
-//   evEbitdaTTM          → EV/EBITDA
-//   revenueGrowthTTMYoy  → Revenue growth YoY (decimal: 0.15 = 15%)
-//   epsGrowthTTMYoy      → EPS growth YoY (decimal)
-//   grossMarginTTM       → Gross margin (percentage: 45 = 45%)
-//   roeAnnual            → Return on equity (percentage)
+//   revenueGrowthTTMYoy     → Revenue growth YoY (decimal: 0.15 = 15%)
+//   epsGrowthTTMYoy         → EPS growth YoY (decimal)
+//   grossMarginTTM          → Gross margin % (e.g. 65 for 65%)
+//   roeAnnual               → Return on equity %
 //   totalDebtToEquityAnnual → D/E ratio
-//   52WeekHigh / 52WeekLow  → 52-week price range
+//   52WeekHigh / 52WeekLow  → price range
 
 function scoreStock({ ticker, sector, metrics: m, closes }) {
   const signals = []
@@ -239,117 +239,100 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
 
   const currentPrice = closes.length > 0 ? closes[closes.length - 1] : null
 
-  // ── Factor 1: Valuation (0–25 pts) ───────────────────────────────────────
-  let val = 0
-  const pe       = m.peBasicExclExtraTTM ?? m.peTTM ?? null
-  const evEbitda = m.evEbitdaTTM ?? null
-  const high52   = m['52WeekHigh'] ?? null
-  const low52    = m['52WeekLow']  ?? null
-
-  if (pe != null && pe > 0) {
-    const sectorMedian = SECTOR_PE[sector] ?? 22
-    const relDiscount = (sectorMedian - pe) / sectorMedian
-    if      (relDiscount > 0.25) { val += 12; signals.push(`P/E ${pe.toFixed(1)}x — >25% below sector median`) }
-    else if (relDiscount > 0.10) { val += 9  }
-    else if (relDiscount > 0)    { val += 6  }
-    else if (relDiscount > -0.20){ val += 3  }
-    // > 20% premium: 0 pts
-  }
-  if (evEbitda != null && evEbitda > 0) {
-    if      (evEbitda < 10)  { val += 8; signals.push(`EV/EBITDA ${evEbitda.toFixed(1)}x — deep value`) }
-    else if (evEbitda < 18)  { val += 5 }
-    else if (evEbitda < 25)  { val += 2 }
-  }
-  if (currentPrice && high52 && low52 && high52 > low52) {
-    const position = (currentPrice - low52) / (high52 - low52)
-    if      (position < 0.25) { val += 5; signals.push(`Price near 52-week low — potential mean-reversion setup`) }
-    else if (position < 0.45) { val += 3 }
-    else if (position > 0.90) { val -= 2 }  // near 52-week high is slightly negative for valuation
-  }
-  score += Math.max(0, Math.min(val, 25))
-
-  // ── Factor 2: Growth (0–35 pts, up-weighted for growth names) ───────────────
-  // Cross-validate TTM growth against 3Y average to filter base-period artifacts.
-  // If TTM is >3x the 3Y rate, it's almost certainly a distortion — fall back to 3Y.
-  let growth = 0
-  const revGttm = m.revenueGrowthTTMYoy  ?? null  // decimal: 0.15 = 15%
-  const revG3y  = m.revenueGrowth3Y      ?? null
-  const epsGttm = m.epsGrowthTTMYoy      ?? null
-  const epsG3y  = m.epsGrowthTTMYoy3Y    ?? m.epsGrowth3Y ?? null
-
-  const revG = sanitiseGrowth(revGttm, revG3y, { epsCap: 2.0 })   // >200% rev = artifact
-  const epsG = sanitiseGrowth(epsGttm, epsG3y, { epsCap: 5.0 })   // >500% EPS = artifact
+  // ── Factor 1: Revenue Growth (0–40 pts) — the #1 predictor of long-term price ──
+  const revGttm = m.revenueGrowthTTMYoy ?? null
+  const revG3y  = m.revenueGrowth3Y     ?? null
+  const revG    = sanitiseGrowth(revGttm, revG3y, { epsCap: 2.0 })
 
   if (revG != null) {
     const pct = revG * 100
-    if      (pct > 40) { growth += 18; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY — hypergrowth`) }
-    else if (pct > 25) { growth += 15; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
-    else if (pct > 15) { growth += 11 }
-    else if (pct > 7)  { growth += 7  }
-    else if (pct > 2)  { growth += 3  }
-    else if (pct < -5) { growth -= 3  }
+    if      (pct > 40) { score += 40; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY — hypergrowth`) }
+    else if (pct > 25) { score += 32; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 15) { score += 23; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 7)  { score += 14 }
+    else if (pct > 2)  { score += 6  }
+    else if (pct < -5) { score -= 5  }
   }
+
+  // ── Factor 2: Profitability trajectory (0–25 pts) ─────────────────────────
+  // EPS growth signals earnings leverage; gross margin signals scalability/moat.
+  let prof = 0
+  const epsGttm = m.epsGrowthTTMYoy ?? null
+  const epsG3y  = m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null
+  const epsG    = sanitiseGrowth(epsGttm, epsG3y, { epsCap: 5.0 })
+  const margin  = m.grossMarginTTM ?? null  // percentage e.g. 65 for 65%
+
   if (epsG != null) {
     const pct = epsG * 100
-    if      (pct > 50) { growth += 17; signals.push(`EPS growth ${pct.toFixed(1)}% YoY — accelerating earnings`) }
-    else if (pct > 30) { growth += 13; signals.push(`EPS growth ${pct.toFixed(1)}% YoY`) }
-    else if (pct > 20) { growth += 9  }
-    else if (pct > 10) { growth += 6  }
-    else if (pct > 3)  { growth += 3  }
-    else if (pct < -10){ growth -= 3  }
+    if      (pct > 50) { prof += 14; signals.push(`EPS growth ${pct.toFixed(1)}% YoY — accelerating earnings`) }
+    else if (pct > 30) { prof += 10; signals.push(`EPS growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 15) { prof += 7  }
+    else if (pct > 5)  { prof += 4  }
+    else if (pct < -15){ prof -= 4  }
   }
-  score += Math.max(0, Math.min(growth, 35))
+  if (margin != null) {
+    // High gross margin = pricing power + scalability — hallmarks of compounders
+    if      (margin > 70) { prof += 11; signals.push(`Gross margin ${margin.toFixed(1)}% — exceptional pricing power`) }
+    else if (margin > 55) { prof += 8;  signals.push(`Gross margin ${margin.toFixed(1)}%`) }
+    else if (margin > 40) { prof += 5  }
+    else if (margin > 25) { prof += 2  }
+    else if (margin < 10) { prof -= 2  }  // thin-margin businesses rarely compound well
+  }
+  score += Math.max(0, Math.min(prof, 25))
 
-  // ── Factor 3: Momentum (0–30 pts, up-weighted) ────────────────────────────
+  // ── Factor 3: Price Momentum (0–25 pts) ───────────────────────────────────
+  // For long-term growth stocks, strong price momentum = institutional conviction.
+  // Near 52-week HIGHS is bullish (trend continuation), not bearish.
   let mom = 0
-  const rsi   = calcRSI(closes)
+  const rsi                      = calcRSI(closes)
   const { macd, crossedAboveZero } = calcMACD(closes)
-  const sma50 = calcSMA(closes, 50)
+  const sma50                    = calcSMA(closes, 50)
+  const high52                   = m['52WeekHigh'] ?? null
+  const low52                    = m['52WeekLow']  ?? null
 
   if (rsi != null) {
-    if      (rsi >= 55 && rsi <= 70)  { mom += 12; signals.push(`RSI ${rsi.toFixed(1)} — strong upward momentum`) }
-    else if (rsi >= 50 && rsi <  55)  { mom += 9; signals.push(`RSI ${rsi.toFixed(1)} — healthy upward momentum`) }
-    else if (rsi >= 40 && rsi <  50)  { mom += 6  }
-    else if (rsi >= 30 && rsi <  40)  { mom += 3  }
-    else if (rsi  > 70 && rsi <= 78)  { mom += 5  }  // strong trend, still buying
-    else if (rsi  > 25 && rsi <  30)  { mom += 2; signals.push(`RSI ${rsi.toFixed(1)} — oversold, bounce potential`) }
+    if      (rsi >= 55 && rsi <= 72) { mom += 10; signals.push(`RSI ${rsi.toFixed(1)} — strong uptrend`) }
+    else if (rsi >= 50 && rsi <  55) { mom += 7  }
+    else if (rsi >= 40 && rsi <  50) { mom += 4  }
+    else if (rsi  > 72)              { mom += 5  }  // overbought but trend is intact
+    else if (rsi >= 30 && rsi <  40) { mom += 2  }
   }
-  if (crossedAboveZero)              { mom += 10; signals.push('MACD bullish zero-line crossover') }
-  else if (macd != null && macd > 0) { mom += 5; signals.push('MACD positive') }
+  if (crossedAboveZero)              { mom += 9; signals.push('MACD bullish zero-line crossover') }
+  else if (macd != null && macd > 0) { mom += 4; signals.push('MACD positive') }
   if (currentPrice && sma50 != null) {
-    if      (currentPrice > sma50 * 1.05) { mom += 8; signals.push(`Price ${((currentPrice/sma50 - 1)*100).toFixed(1)}% above 50-day SMA — strong trend`) }
-    else if (currentPrice > sma50 * 1.02) { mom += 5; signals.push(`Price ${((currentPrice/sma50 - 1)*100).toFixed(1)}% above 50-day SMA`) }
-    else if (currentPrice > sma50 * 0.99) { mom += 2 }
+    const abv = (currentPrice / sma50 - 1) * 100
+    if      (abv > 10) { mom += 6; signals.push(`Price ${abv.toFixed(1)}% above 50-day SMA — strong trend`) }
+    else if (abv > 4)  { mom += 4; signals.push(`Price ${abv.toFixed(1)}% above 50-day SMA`) }
+    else if (abv > 0)  { mom += 2 }
+    else               { mom -= 2 }  // below SMA50 is a mild negative
   }
-  score += Math.max(0, Math.min(mom, 30))
+  // Near 52-week high = trend confirmation for growth stocks (opposite of value logic)
+  if (currentPrice && high52 && low52 && high52 > low52) {
+    const position = (currentPrice - low52) / (high52 - low52)
+    if      (position > 0.85) { mom += 0 }  // neutral — already priced into momentum above
+    else if (position < 0.30) { mom -= 3 }  // price collapsing is a red flag
+  }
+  score += Math.max(0, Math.min(mom, 25))
 
-  // ── Factor 4: Quality (0–25 pts) ──────────────────────────────────────────
+  // ── Factor 4: Business Quality (0–10 pts) ─────────────────────────────────
+  // A light check — great growth in a broken business is unsustainable.
   let qual = 0
-  const margin = m.grossMarginTTM ?? null          // percentage (e.g. 45 for 45%)
-  const roe    = m.roeAnnual ?? null               // percentage
-  const de     = m.totalDebtToEquityAnnual ?? null // ratio
+  const roe = m.roeAnnual ?? null
+  const de  = m.totalDebtToEquityAnnual ?? null
 
-  if (margin != null) {
-    if      (margin > 55) { qual += 10; signals.push(`Gross margin ${margin.toFixed(1)}%`) }
-    else if (margin > 40) { qual += 7  }
-    else if (margin > 25) { qual += 4  }
-    else if (margin > 10) { qual += 2  }
-  }
   if (roe != null && roe > 0) {
-    if      (roe > 25) { qual += 10; signals.push(`ROE ${roe.toFixed(1)}%`) }
-    else if (roe > 15) { qual += 7  }
-    else if (roe > 8)  { qual += 4  }
-    else if (roe > 3)  { qual += 2  }
+    if      (roe > 20) { qual += 6; signals.push(`ROE ${roe.toFixed(1)}% — efficient capital deployment`) }
+    else if (roe > 10) { qual += 4 }
+    else if (roe > 0)  { qual += 2 }
   }
   if (de != null) {
-    if      (de < 0.3) { qual += 5; signals.push('Low financial leverage (D/E < 0.3x)') }
-    else if (de < 0.8) { qual += 3 }
-    else if (de < 1.5) { qual += 1 }
-    else if (de > 3.0) { qual -= 2 }  // high leverage is a risk flag
+    if      (de < 0.5) { qual += 4 }
+    else if (de < 1.5) { qual += 2 }
+    else if (de > 4.0) { qual -= 3 }  // dangerously leveraged
   }
-  score += Math.max(0, Math.min(qual, 25))
+  score += Math.max(0, Math.min(qual, 10))
 
-  return { score: Math.round(Math.max(0, Math.min(score, 115))), signals, currentPrice }
+  return { score: Math.round(Math.max(0, score)), signals, currentPrice }
 }
 
 // ── Analyst overlay (up to +10 pts bonus) ─────────────────────────────────────
@@ -489,12 +472,13 @@ Analysts:  Mean price target ${s.priceTarget?.targetMean ? '$' + s.priceTarget.t
 
   const prompt = `You are a senior equity research analyst writing a daily quantitative brief. Today is ${today}.
 
-A multi-factor screening model scored 30 large-cap US stocks across Valuation (P/E vs sector median, EV/EBITDA), Growth (revenue & EPS momentum), Technical Momentum (RSI, MACD, SMA relationship), and Quality (margins, ROE, leverage). The top 3 highest-scoring stocks are shown below.
+A long-term growth screening model ranked 45 US stocks across Revenue Growth (primary driver — 40 pts), Profitability Trajectory (EPS growth + gross margin expansion — 25 pts), Price Momentum (RSI, MACD, SMA — 25 pts), and Business Quality (ROE, leverage — 10 pts). High P/E is not penalised — a company growing 40% annually at 80x earnings is cheap relative to its growth. The goal is to identify stocks with the best chance of significant long-term appreciation. The top 3 highest-scoring stocks are shown below.
 
-YOUR TASK: Write a grounded analytical narrative for each stock. You MUST:
+YOUR TASK: Write a grounded analytical narrative for each stock focused on long-term growth potential. You MUST:
 - Cite specific numbers from the data (do not round aggressively — keep one decimal)
 - Reference only what the quantitative data shows — no invented events, no news, no speculation beyond what the numbers imply
-- Be honest about weaknesses even when the score is high
+- Frame the thesis around long-term compounding potential, not near-term catalysts
+- Be honest about risks even when the score is high
 - Keep each whyNow to 2-3 sentences
 
 DATA:
@@ -503,7 +487,7 @@ ${stockSummaries}
 Return raw JSON only (no markdown, no code fences):
 {
   "date": "${today}",
-  "methodology": "Quantitative multi-factor model: Valuation + Growth + Momentum + Quality across 30 US large-caps",
+  "methodology": "Long-term growth model: Revenue Growth + Profitability Trajectory + Momentum + Quality across 45 US stocks",
   "picks": [
     {
       "ticker": "TICKER",
