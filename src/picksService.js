@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v10'
+const CACHE_KEY   = 'daily_picks_v11'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
@@ -242,7 +242,7 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   // ── Factor 1: Revenue Growth (0–40 pts) — the #1 predictor of long-term price ──
   const revGttm = m.revenueGrowthTTMYoy ?? null
   const revG3y  = m.revenueGrowth3Y     ?? null
-  const revG    = sanitiseGrowth(revGttm, revG3y, { epsCap: 2.0 })
+  const revG    = sanitiseGrowth(revGttm, revG3y, { epsCap: 1.5 })
 
   if (revG != null) {
     const pct = revG * 100
@@ -259,7 +259,7 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   let prof = 0
   const epsGttm = m.epsGrowthTTMYoy ?? null
   const epsG3y  = m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null
-  const epsG    = sanitiseGrowth(epsGttm, epsG3y, { epsCap: 5.0 })
+  const epsG    = sanitiseGrowth(epsGttm, epsG3y, { epsCap: 3.0 })
   const margin  = m.grossMarginTTM ?? null  // percentage e.g. 65 for 65%
 
   if (epsG != null) {
@@ -335,32 +335,45 @@ function scoreStock({ ticker, sector, metrics: m, closes }) {
   return { score: Math.round(Math.max(0, score)), signals, currentPrice }
 }
 
-// ── Analyst overlay (up to +10 pts bonus) ─────────────────────────────────────
+// ── Analyst overlay (up to +30 pts) ───────────────────────────────────────────
+// Analyst consensus is the best forward-looking signal available from Finnhub.
+// Price targets embed 12-month earnings estimates; buy ratios reflect conviction.
+// Weighted heavily so stocks with strong professional consensus can outrank
+// backwards-looking quant scores — this is the "forward-looking" layer.
 function analystBonus(priceTarget, rec, currentPrice) {
   let bonus = 0
   const bonusSignals = []
 
+  // Price target upside — up to 18 pts
   if (priceTarget?.targetMean && currentPrice && currentPrice > 0) {
     const upside = (priceTarget.targetMean - currentPrice) / currentPrice
-    if      (upside > 0.25) { bonus += 5; bonusSignals.push(`Analyst mean target +${(upside * 100).toFixed(0)}% upside`) }
-    else if (upside > 0.12) { bonus += 3 }
-    else if (upside > 0.03) { bonus += 1 }
+    if      (upside > 0.40) { bonus += 18; bonusSignals.push(`Analyst consensus: +${(upside * 100).toFixed(0)}% upside to mean target`) }
+    else if (upside > 0.25) { bonus += 14; bonusSignals.push(`Analyst consensus: +${(upside * 100).toFixed(0)}% upside to mean target`) }
+    else if (upside > 0.15) { bonus += 9;  bonusSignals.push(`Analyst mean target +${(upside * 100).toFixed(0)}% upside`) }
+    else if (upside > 0.05) { bonus += 4  }
+    else if (upside < 0)    { bonus -= 5; bonusSignals.push(`Analyst mean target below current price`) }
   }
+
+  // Buy/Strong Buy ratio — up to 12 pts
   if (rec?.strongBuy != null) {
     const total   = (rec.strongBuy || 0) + (rec.buy || 0) + (rec.hold || 0) + (rec.sell || 0) + (rec.strongSell || 0)
     const bullish = total > 0 ? ((rec.strongBuy || 0) + (rec.buy || 0)) / total : 0
-    if      (bullish > 0.75) { bonus += 5; bonusSignals.push(`${(bullish * 100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
-    else if (bullish > 0.55) { bonus += 3 }
-    else if (bullish > 0.40) { bonus += 1 }
+    if      (bullish > 0.80) { bonus += 12; bonusSignals.push(`${(bullish * 100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
+    else if (bullish > 0.65) { bonus += 8;  bonusSignals.push(`${(bullish * 100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
+    else if (bullish > 0.50) { bonus += 4  }
+    else if (bullish < 0.30) { bonus -= 4; bonusSignals.push(`Analyst consensus weak — <30% Buy ratings`) }
   }
 
-  return { bonus: Math.min(bonus, 10), bonusSignals }
+  return { bonus: Math.min(bonus, 30), bonusSignals }
 }
 
-// ── Confidence: how much data-driven signal is behind the score ───────────────
+// ── Confidence: quant score + analyst agreement must both be present ──────────
+// "High" requires strong model signals AND analyst consensus pointing the same way.
+// signalCount includes analyst signals (pushed by analystBonus), so a stock with
+// good momentum + strong analyst upside + high buy ratio will naturally have 4-5 signals.
 function deriveConfidence(totalScore, signalCount) {
-  if (totalScore >= 55 && signalCount >= 3) return 'high'
-  if (totalScore >= 38 && signalCount >= 2) return 'medium'
+  if (totalScore >= 65 && signalCount >= 4) return 'high'
+  if (totalScore >= 45 && signalCount >= 2) return 'medium'
   return 'low'
 }
 
@@ -402,10 +415,14 @@ export async function getDailyPicks(forceRefresh = false) {
     return { ...stock, score, signals, currentPrice }
   })
   scored.sort((a, b) => b.score - a.score)
-  const top5 = scored.slice(0, 5)
+  const top10 = scored.slice(0, 10)
 
-  // ── Step 3: Fetch analyst data for top 5 only (10 calls, fast) ────────────
-  const analystData = await Promise.allSettled(top5.map(async stock => {
+  // ── Step 3: Fetch analyst data for top 10 — forward-looking signal ─────────
+  // Analyst consensus (price targets + buy ratings) is the best forward-looking
+  // data available without a premium data feed. Widening to 10 candidates ensures
+  // a high-momentum stock that ranks 8th on backwards data can still win if
+  // analysts have a much stronger view on it than on the top 5.
+  const analystData = await Promise.allSettled(top10.map(async stock => {
     const [priceTarget, rec] = await Promise.all([
       fetchPriceTarget(stock.ticker),
       fetchRecommendation(stock.ticker),
@@ -417,11 +434,11 @@ export async function getDailyPicks(forceRefresh = false) {
     if (r.status === 'fulfilled') analystMap[r.value.ticker] = r.value
   })
 
-  // ── Step 4: Re-score top 5 with analyst bonus, select top 3 ───────────────
-  const finalTop5 = top5.map(stock => {
+  // ── Step 4: Re-score top 10 with analyst bonus, select top 3 ──────────────
+  const finalTop10 = top10.map(stock => {
     const a = analystMap[stock.ticker] ?? {}
     const { bonus, bonusSignals } = analystBonus(a.priceTarget, a.rec, stock.currentPrice)
-    const totalScore = Math.min(stock.score + bonus, 125)
+    const totalScore = stock.score + bonus
     const allSignals = [...stock.signals, ...bonusSignals]
     const confidence = deriveConfidence(totalScore, allSignals.length)
     return {
@@ -433,8 +450,8 @@ export async function getDailyPicks(forceRefresh = false) {
       rec:         a.rec ?? {},
     }
   })
-  finalTop5.sort((a, b) => b.score - a.score)
-  const top3 = finalTop5.slice(0, 3)
+  finalTop10.sort((a, b) => b.score - a.score)
+  const top3 = finalTop10.slice(0, 3)
 
   // ── Step 5: Build data snapshot for Claude's narrative pass ───────────────
   const today = new Date().toISOString().split('T')[0]
@@ -442,8 +459,8 @@ export async function getDailyPicks(forceRefresh = false) {
   const stockSummaries = top3.map(s => {
     const m      = s.metrics
     const pe      = (m.peBasicExclExtraTTM ?? m.peTTM ?? null)
-    const _revG   = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null, { epsCap: 2.0 })
-    const _epsG   = sanitiseGrowth(m.epsGrowthTTMYoy ?? null, m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null, { epsCap: 5.0 })
+    const _revG   = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null, { epsCap: 1.5 })
+    const _epsG   = sanitiseGrowth(m.epsGrowthTTMYoy ?? null, m.epsGrowthTTMYoy3Y ?? m.epsGrowth3Y ?? null, { epsCap: 3.0 })
     const revG    = _revG != null ? (_revG * 100).toFixed(1) : 'N/A'
     const epsG    = _epsG != null ? (_epsG * 100).toFixed(1) : 'N/A'
     const margin = m.grossMarginTTM      != null ? m.grossMarginTTM.toFixed(1)  : 'N/A'
