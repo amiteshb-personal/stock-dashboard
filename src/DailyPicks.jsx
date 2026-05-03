@@ -216,10 +216,10 @@ function DailyPicks({ picks, loading, error, fromCache, onRefresh, watchlist, on
       <div className="picks-methodology-banner">
         <span className="picks-methodology-icon">◆</span>
         <span>
-          <strong>Quantitative model.</strong> Stocks are scored across four equal-weight factors:
-          Valuation (P/E vs sector, EV/EBITDA), Growth (revenue &amp; EPS momentum),
-          Technical Momentum (RSI, MACD, SMA), and Quality (margins, ROE, leverage).
-          Picks are stable for 24 hours — the model re-runs once per day.
+          <strong>Long-term growth model.</strong> 22 high-growth stocks scored on Revenue Growth,
+          Profitability Trajectory (EPS + gross margin), Price Momentum (RSI, MACD, SMA),
+          and Analyst Consensus (price targets + buy ratings). High P/E is not penalised —
+          the goal is significant long-term appreciation, not cheap stocks.
         </span>
       </div>
 

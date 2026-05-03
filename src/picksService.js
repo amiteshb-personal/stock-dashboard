@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v12'
+const CACHE_KEY   = 'daily_picks_v13'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 22 hand-picked growth stocks ───────────────────────────────────
@@ -354,48 +354,36 @@ export async function getDailyPicks(forceRefresh = false) {
     if (cached) return { ...cached, fromCache: true }
   }
 
-  // ── Step 1: Fetch metrics + candles for all 22 stocks (sequential) ──────────
-  // Finnhub free tier: 60 calls/min → 2 parallel calls per stock every 2.1s ≈ 57/min
+  // ── Step 1: Fetch all data per stock in a single sequential loop ─────────────
+  // All 4 calls (metrics, candles, priceTarget, rec) fire in parallel per stock,
+  // then we sleep 4.5s before the next stock.
+  // Rate budget: 4 calls × 22 stocks = 88 calls over 22×4.5s ≈ 99s → ~53 calls/min ✓
+  // This avoids the burst-rate problem of firing 44 analyst calls all at once after
+  // the initial loop, which was silently rate-limiting all the analyst responses.
   const stockData = []
   for (const stock of UNIVERSE) {
     try {
-      const [metrics, closes] = await Promise.all([
+      const [metrics, closes, priceTarget, rec] = await Promise.all([
         fetchMetrics(stock.ticker),
         fetchCandles(stock.ticker),
+        fetchPriceTarget(stock.ticker),
+        fetchRecommendation(stock.ticker),
       ])
       if (closes.length >= 14 || Object.keys(metrics).length > 5) {
-        stockData.push({ ...stock, metrics, closes })
+        stockData.push({ ...stock, metrics, closes, priceTarget, rec })
       }
     } catch { /* silently skip */ }
-    await sleep(2100)
+    await sleep(4500)
   }
 
   if (stockData.length === 0) {
     throw new Error('No data returned from Finnhub. Check your API key or try again shortly.')
   }
 
-  // ── Step 2: Fetch analyst data for ALL stocks in parallel ─────────────────
-  // This is the key change: analyst consensus (price targets + buy ratings) is
-  // applied to every stock before scoring, not just the top N. A stock sitting
-  // 10th on backwards momentum data can win if analysts have a much stronger
-  // forward view on it. 22 stocks × 2 parallel calls = ~44 simultaneous requests.
-  const analystResults = await Promise.allSettled(stockData.map(async stock => {
-    const [priceTarget, rec] = await Promise.all([
-      fetchPriceTarget(stock.ticker),
-      fetchRecommendation(stock.ticker),
-    ])
-    return { ticker: stock.ticker, priceTarget, rec }
-  }))
-  const analystMap = {}
-  analystResults.forEach(r => {
-    if (r.status === 'fulfilled') analystMap[r.value.ticker] = r.value
-  })
-
-  // ── Step 3: Score all stocks with analyst data already baked in ────────────
+  // ── Step 2: Score all stocks — quant + analyst in one pass ────────────────
   const scored = stockData.map(stock => {
     const { score, signals, currentPrice } = scoreStock(stock)
-    const a = analystMap[stock.ticker] ?? {}
-    const { bonus, bonusSignals } = analystBonus(a.priceTarget, a.rec, currentPrice)
+    const { bonus, bonusSignals } = analystBonus(stock.priceTarget, stock.rec, currentPrice)
     const totalScore = score + bonus
     const allSignals = [...signals, ...bonusSignals]
     const confidence = deriveConfidence(totalScore, allSignals.length)
@@ -406,8 +394,6 @@ export async function getDailyPicks(forceRefresh = false) {
       signals: allSignals,
       confidence,
       currentPrice,
-      priceTarget: a.priceTarget ?? {},
-      rec: a.rec ?? {},
     }
   })
   scored.sort((a, b) => b.score - a.score)
@@ -450,7 +436,7 @@ Analysts:  Mean price target ${s.priceTarget?.targetMean ? '$' + s.priceTarget.t
 
   const prompt = `You are a senior equity research analyst writing a daily quantitative brief. Today is ${today}.
 
-A long-term growth screening model ranked 45 US stocks across Revenue Growth (primary driver — 40 pts), Profitability Trajectory (EPS growth + gross margin expansion — 25 pts), Price Momentum (RSI, MACD, SMA — 25 pts), and Business Quality (ROE, leverage — 10 pts). High P/E is not penalised — a company growing 40% annually at 80x earnings is cheap relative to its growth. The goal is to identify stocks with the best chance of significant long-term appreciation. The top 3 highest-scoring stocks are shown below.
+A long-term growth screening model ranked 22 high-growth US stocks across Revenue Growth (primary driver — 40 pts), Profitability Trajectory (EPS growth + gross margin expansion — 25 pts), Price Momentum (RSI, MACD, SMA — 25 pts), Business Quality (ROE, leverage — 10 pts), and Analyst Consensus (price target upside + buy ratings — up to 30 pts bonus). High P/E is not penalised — a company growing 40% annually at 80x earnings is cheap relative to its growth. The goal is to identify stocks with the best chance of significant long-term appreciation. The top 3 highest-scoring stocks are shown below.
 
 YOUR TASK: Write a grounded analytical narrative for each stock focused on long-term growth potential. You MUST:
 - Cite specific numbers from the data (do not round aggressively — keep one decimal)
