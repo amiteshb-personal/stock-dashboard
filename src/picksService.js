@@ -6,66 +6,36 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v11'
+const CACHE_KEY   = 'daily_picks_v12'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
-// ── Universe: 45 stocks — large-cap anchors + high-growth names ──────────────
+// ── Universe: 22 hand-picked growth stocks ───────────────────────────────────
+// Deliberately small — every stock here is chosen because it has a credible
+// long-term growth thesis, solid Finnhub data coverage, and strong analyst
+// following. Smaller universe = faster fetches, better data reliability.
 const UNIVERSE = [
-  // Technology — large cap
-  { ticker: 'AAPL',  name: 'Apple Inc.',              sector: 'Technology'  },
-  { ticker: 'MSFT',  name: 'Microsoft Corp.',          sector: 'Technology'  },
-  { ticker: 'GOOGL', name: 'Alphabet Inc.',            sector: 'Technology'  },
-  { ticker: 'META',  name: 'Meta Platforms',           sector: 'Technology'  },
   { ticker: 'NVDA',  name: 'NVIDIA Corp.',             sector: 'Technology'  },
-  { ticker: 'AMD',   name: 'Advanced Micro Devices',   sector: 'Technology'  },
-  { ticker: 'ORCL',  name: 'Oracle Corp.',             sector: 'Technology'  },
-  { ticker: 'CRM',   name: 'Salesforce Inc.',          sector: 'Technology'  },
-  // Technology — high-growth
-  { ticker: 'CRWD',  name: 'CrowdStrike Holdings',     sector: 'Technology'  },
-  { ticker: 'DDOG',  name: 'Datadog Inc.',             sector: 'Technology'  },
-  { ticker: 'SNOW',  name: 'Snowflake Inc.',           sector: 'Technology'  },
-  { ticker: 'PLTR',  name: 'Palantir Technologies',    sector: 'Technology'  },
-  { ticker: 'NET',   name: 'Cloudflare Inc.',          sector: 'Technology'  },
-  { ticker: 'MELI',  name: 'MercadoLibre Inc.',        sector: 'Technology'  },
-  { ticker: 'TTD',   name: 'The Trade Desk',           sector: 'Technology'  },
-  // Finance
-  { ticker: 'JPM',   name: 'JPMorgan Chase',           sector: 'Finance'     },
-  { ticker: 'GS',    name: 'Goldman Sachs',            sector: 'Finance'     },
-  { ticker: 'V',     name: 'Visa Inc.',                sector: 'Finance'     },
-  { ticker: 'MA',    name: 'Mastercard Inc.',          sector: 'Finance'     },
-  { ticker: 'COIN',  name: 'Coinbase Global',          sector: 'Finance'     },
-  // Healthcare — high-growth
-  { ticker: 'LLY',   name: 'Eli Lilly & Co.',          sector: 'Healthcare'  },
-  { ticker: 'ABBV',  name: 'AbbVie Inc.',              sector: 'Healthcare'  },
-  { ticker: 'ISRG',  name: 'Intuitive Surgical',       sector: 'Healthcare'  },
-  { ticker: 'DXCM',  name: 'DexCom Inc.',              sector: 'Healthcare'  },
-  { ticker: 'RXRX',  name: 'Recursion Pharmaceuticals',sector: 'Healthcare'  },
-  // Consumer — growth-oriented
+  { ticker: 'MSFT',  name: 'Microsoft Corp.',          sector: 'Technology'  },
+  { ticker: 'META',  name: 'Meta Platforms',           sector: 'Technology'  },
+  { ticker: 'GOOGL', name: 'Alphabet Inc.',            sector: 'Technology'  },
   { ticker: 'AMZN',  name: 'Amazon.com Inc.',          sector: 'Consumer'    },
-  { ticker: 'TSLA',  name: 'Tesla Inc.',               sector: 'Consumer'    },
-  { ticker: 'SHOP',  name: 'Shopify Inc.',             sector: 'Consumer'    },
-  { ticker: 'DUOL',  name: 'Duolingo Inc.',            sector: 'Consumer'    },
-  // Energy — transition + growth
-  { ticker: 'XOM',   name: 'ExxonMobil Corp.',         sector: 'Energy'      },
-  { ticker: 'FSLR',  name: 'First Solar Inc.',         sector: 'Energy'      },
-  { ticker: 'ENPH',  name: 'Enphase Energy',           sector: 'Energy'      },
-  // Industrial / Defense
-  { ticker: 'CAT',   name: 'Caterpillar Inc.',         sector: 'Industrial'  },
-  { ticker: 'GE',    name: 'GE Aerospace',             sector: 'Industrial'  },
-  { ticker: 'AXON',  name: 'Axon Enterprise',          sector: 'Industrial'  },
-  // Media / Communication
+  { ticker: 'CRWD',  name: 'CrowdStrike Holdings',     sector: 'Technology'  },
+  { ticker: 'PLTR',  name: 'Palantir Technologies',    sector: 'Technology'  },
+  { ticker: 'ARM',   name: 'Arm Holdings',             sector: 'Technology'  },
+  { ticker: 'DDOG',  name: 'Datadog Inc.',             sector: 'Technology'  },
+  { ticker: 'NET',   name: 'Cloudflare Inc.',          sector: 'Technology'  },
   { ticker: 'NFLX',  name: 'Netflix Inc.',             sector: 'Media'       },
   { ticker: 'SPOT',  name: 'Spotify Technology',       sector: 'Media'       },
-  { ticker: 'RBLX',  name: 'Roblox Corp.',             sector: 'Media'       },
-  // AI / Infrastructure
-  { ticker: 'SMCI',  name: 'Super Micro Computer',     sector: 'Technology'  },
-  { ticker: 'ARM',   name: 'Arm Holdings',             sector: 'Technology'  },
-  { ticker: 'IONQ',  name: 'IonQ Inc.',                sector: 'Technology'  },
-  // Fintech / Payments
-  { ticker: 'SQ',    name: 'Block Inc.',               sector: 'Finance'     },
-  { ticker: 'AFRM',  name: 'Affirm Holdings',          sector: 'Finance'     },
-  { ticker: 'HOOD',  name: 'Robinhood Markets',        sector: 'Finance'     },
-  { ticker: 'SOFI',  name: 'SoFi Technologies',        sector: 'Finance'     },
+  { ticker: 'LLY',   name: 'Eli Lilly & Co.',          sector: 'Healthcare'  },
+  { ticker: 'ISRG',  name: 'Intuitive Surgical',       sector: 'Healthcare'  },
+  { ticker: 'COIN',  name: 'Coinbase Global',          sector: 'Finance'     },
+  { ticker: 'SHOP',  name: 'Shopify Inc.',             sector: 'Consumer'    },
+  { ticker: 'MELI',  name: 'MercadoLibre Inc.',        sector: 'Consumer'    },
+  { ticker: 'TSLA',  name: 'Tesla Inc.',               sector: 'Consumer'    },
+  { ticker: 'AXON',  name: 'Axon Enterprise',          sector: 'Industrial'  },
+  { ticker: 'DUOL',  name: 'Duolingo Inc.',            sector: 'Consumer'    },
+  { ticker: 'TTD',   name: 'The Trade Desk',           sector: 'Technology'  },
+  { ticker: 'SNOW',  name: 'Snowflake Inc.',           sector: 'Technology'  },
 ]
 
 // Sector-typical P/E medians used for relative valuation scoring
@@ -384,10 +354,8 @@ export async function getDailyPicks(forceRefresh = false) {
     if (cached) return { ...cached, fromCache: true }
   }
 
-  // ── Step 1: Fetch metrics + candles for all stocks ────────────────────────
-  // Finnhub free tier: 60 calls/min.
-  // We fetch 2 calls per stock (metrics + candles) sequentially,
-  // with a 2.1-second gap between stocks → ~57 calls/min, safely within limit.
+  // ── Step 1: Fetch metrics + candles for all 22 stocks (sequential) ──────────
+  // Finnhub free tier: 60 calls/min → 2 parallel calls per stock every 2.1s ≈ 57/min
   const stockData = []
   for (const stock of UNIVERSE) {
     try {
@@ -395,13 +363,10 @@ export async function getDailyPicks(forceRefresh = false) {
         fetchMetrics(stock.ticker),
         fetchCandles(stock.ticker),
       ])
-      // 14 closes = minimum for RSI; MACD silently returns null if fewer than 26
       if (closes.length >= 14 || Object.keys(metrics).length > 5) {
         stockData.push({ ...stock, metrics, closes })
       }
-    } catch {
-      // silently skip stocks that fail
-    }
+    } catch { /* silently skip */ }
     await sleep(2100)
   }
 
@@ -409,20 +374,12 @@ export async function getDailyPicks(forceRefresh = false) {
     throw new Error('No data returned from Finnhub. Check your API key or try again shortly.')
   }
 
-  // ── Step 2: Score every stock ──────────────────────────────────────────────
-  const scored = stockData.map(stock => {
-    const { score, signals, currentPrice } = scoreStock(stock)
-    return { ...stock, score, signals, currentPrice }
-  })
-  scored.sort((a, b) => b.score - a.score)
-  const top10 = scored.slice(0, 10)
-
-  // ── Step 3: Fetch analyst data for top 10 — forward-looking signal ─────────
-  // Analyst consensus (price targets + buy ratings) is the best forward-looking
-  // data available without a premium data feed. Widening to 10 candidates ensures
-  // a high-momentum stock that ranks 8th on backwards data can still win if
-  // analysts have a much stronger view on it than on the top 5.
-  const analystData = await Promise.allSettled(top10.map(async stock => {
+  // ── Step 2: Fetch analyst data for ALL stocks in parallel ─────────────────
+  // This is the key change: analyst consensus (price targets + buy ratings) is
+  // applied to every stock before scoring, not just the top N. A stock sitting
+  // 10th on backwards momentum data can win if analysts have a much stronger
+  // forward view on it. 22 stocks × 2 parallel calls = ~44 simultaneous requests.
+  const analystResults = await Promise.allSettled(stockData.map(async stock => {
     const [priceTarget, rec] = await Promise.all([
       fetchPriceTarget(stock.ticker),
       fetchRecommendation(stock.ticker),
@@ -430,28 +387,32 @@ export async function getDailyPicks(forceRefresh = false) {
     return { ticker: stock.ticker, priceTarget, rec }
   }))
   const analystMap = {}
-  analystData.forEach(r => {
+  analystResults.forEach(r => {
     if (r.status === 'fulfilled') analystMap[r.value.ticker] = r.value
   })
 
-  // ── Step 4: Re-score top 10 with analyst bonus, select top 3 ──────────────
-  const finalTop10 = top10.map(stock => {
+  // ── Step 3: Score all stocks with analyst data already baked in ────────────
+  const scored = stockData.map(stock => {
+    const { score, signals, currentPrice } = scoreStock(stock)
     const a = analystMap[stock.ticker] ?? {}
-    const { bonus, bonusSignals } = analystBonus(a.priceTarget, a.rec, stock.currentPrice)
-    const totalScore = stock.score + bonus
-    const allSignals = [...stock.signals, ...bonusSignals]
+    const { bonus, bonusSignals } = analystBonus(a.priceTarget, a.rec, currentPrice)
+    const totalScore = score + bonus
+    const allSignals = [...signals, ...bonusSignals]
     const confidence = deriveConfidence(totalScore, allSignals.length)
+    console.log(`[picks] ${stock.ticker}: base=${score} analyst=${bonus} total=${totalScore} signals=${allSignals.length}`)
     return {
       ...stock,
-      score:      totalScore,
-      signals:    allSignals,
+      score: totalScore,
+      signals: allSignals,
       confidence,
+      currentPrice,
       priceTarget: a.priceTarget ?? {},
-      rec:         a.rec ?? {},
+      rec: a.rec ?? {},
     }
   })
-  finalTop10.sort((a, b) => b.score - a.score)
-  const top3 = finalTop10.slice(0, 3)
+  scored.sort((a, b) => b.score - a.score)
+  console.log('[picks] ranking:', scored.map(s => `${s.ticker}:${s.score}`).join(' '))
+  const top3 = scored.slice(0, 3)
 
   // ── Step 5: Build data snapshot for Claude's narrative pass ───────────────
   const today = new Date().toISOString().split('T')[0]
