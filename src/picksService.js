@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 })
 
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY
-const CACHE_KEY   = 'daily_picks_v14'
+const CACHE_KEY   = 'daily_picks_v15'
 const CACHE_TTL   = 24 * 60 * 60 * 1000  // 24 hours
 
 // ── Universe: 22 hand-picked growth stocks ───────────────────────────────────
@@ -94,13 +94,16 @@ async function fetchQuote(ticker) {
   }
 }
 
-async function fetchPriceTarget(ticker) {
+// Returns last 4 quarterly earnings (actual vs estimate) for beat-rate scoring.
+// This is a genuine forward-looking quality signal — consistent earners beat shorts.
+async function fetchEarnings(ticker) {
   try {
-    const url  = `https://finnhub.io/api/v1/stock/price-target?symbol=${ticker}&token=${FINNHUB_KEY}`
+    const url  = `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${FINNHUB_KEY}`
     const res  = await fetch(url)
-    return await res.json()
+    const data = await res.json()
+    return Array.isArray(data) ? data.slice(0, 4) : []
   } catch {
-    return {}
+    return []
   }
 }
 
@@ -130,69 +133,86 @@ function sanitiseGrowth(ttm, threeY, { revCap = 2.0, epsCap = 5.0 } = {}) {
 
 // ── Scoring: built only on data Finnhub free tier reliably returns ────────────
 //
-// Candles were silently returning empty arrays for all tickers, making every
-// momentum signal null. We now use a simple quote call for the current price.
+// v15 scoring — replaced dead price-target factor (targetMean always null on
+// free tier) with two reliable signals:
+//   52-week range position  (0-25 pts) — trend/momentum via existing quote+metric data
+//   Earnings beat rate      (0-20 pts) — execution quality, last 4 quarters
 //
-// Scoring factors (all from verified-reliable Finnhub endpoints):
-//   Analyst upside    (0–35 pts) — price target vs current price   [/stock/price-target + /quote]
-//   Analyst consensus (0–20 pts) — % Buy/Strong Buy ratings        [/stock/recommendation]
-//   Revenue growth    (0–25 pts) — YoY revenue growth when valid   [/stock/metric]
-//   Gross margin      (0–12 pts) — pricing power / scalability     [/stock/metric]
-//   ROE               (0–8 pts)  — capital efficiency              [/stock/metric]
+// Final factor weights:
+//   52-week range position  (0–25 pts) — momentum / trend strength      [/quote + /metric]
+//   Analyst consensus       (0–25 pts) — % Buy/Strong Buy ratings       [/stock/recommendation]
+//   Earnings beat rate      (0–20 pts) — beat estimate last 4 quarters  [/stock/earnings]
+//   Revenue growth          (0–18 pts) — YoY revenue growth when valid  [/stock/metric]
+//   Gross margin            (0–12 pts) — pricing power / scalability    [/stock/metric]
 //
-// Total max: 100 pts (all factors firing).
+// Total max: 100 pts.  Stocks with strong momentum + analyst backing + earnings
+// execution should reach 65-80 pts and qualify for "high" confidence.
 
-function scoreStock({ metrics: m, currentPrice, priceTarget, rec }) {
+function scoreStock({ metrics: m, currentPrice, earnings, rec }) {
   const signals = []
   let score = 0
 
-  // ── Factor 1: Analyst price target upside (0–35 pts) ──────────────────────
-  if (priceTarget?.targetMean && currentPrice && currentPrice > 0) {
-    const upside = (priceTarget.targetMean - currentPrice) / currentPrice * 100
-    if      (upside > 40) { score += 35; signals.push(`Analyst mean target +${upside.toFixed(0)}% upside`) }
-    else if (upside > 25) { score += 28; signals.push(`Analyst mean target +${upside.toFixed(0)}% upside`) }
-    else if (upside > 15) { score += 18; signals.push(`Analyst mean target +${upside.toFixed(0)}% upside`) }
-    else if (upside > 5)  { score += 8  }
-    else if (upside < 0)  { score -= 8; signals.push('Analyst target below current price') }
+  // ── Factor 1: 52-week range position (0–25 pts) ───────────────────────────
+  // Where the stock sits in its 52-week hi/lo range is a clean momentum signal.
+  // High position = institutional accumulation + trend intact.
+  // No extra API calls — 52WeekHigh / 52WeekLow come from /stock/metric.
+  const hi52 = m['52WeekHigh'] ?? null
+  const lo52 = m['52WeekLow']  ?? null
+  if (hi52 && lo52 && currentPrice && hi52 > lo52) {
+    const rangePos = (currentPrice - lo52) / (hi52 - lo52)  // 0 = at lows, 1 = at highs
+    if      (rangePos >= 0.80) { score += 25; signals.push(`Trading near 52-week high (${(rangePos*100).toFixed(0)}% of range) — strong uptrend`) }
+    else if (rangePos >= 0.60) { score += 18; signals.push(`Strong momentum — ${(rangePos*100).toFixed(0)}% of 52-week range`) }
+    else if (rangePos >= 0.45) { score += 10 }
+    else if (rangePos >= 0.25) { score += 3  }
+    else                       { score -= 3; signals.push('Near 52-week lows — weak price action') }
   }
 
-  // ── Factor 2: Analyst buy consensus (0–20 pts) ────────────────────────────
+  // ── Factor 2: Analyst buy consensus (0–25 pts) ────────────────────────────
+  // More granular tiers vs v14 to better distinguish 95% vs 75% buy ratios.
   if (rec?.strongBuy != null) {
     const total   = (rec.strongBuy||0) + (rec.buy||0) + (rec.hold||0) + (rec.sell||0) + (rec.strongSell||0)
     const bullish = total > 0 ? ((rec.strongBuy||0) + (rec.buy||0)) / total : 0
-    if      (bullish > 0.80) { score += 20; signals.push(`${(bullish*100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
-    else if (bullish > 0.65) { score += 14; signals.push(`${(bullish*100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
-    else if (bullish > 0.50) { score += 7  }
-    else if (bullish < 0.30) { score -= 5; signals.push('Weak analyst consensus — <30% Buy ratings') }
+    if      (bullish >= 0.90) { score += 25; signals.push(`${(bullish*100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
+    else if (bullish >= 0.80) { score += 20; signals.push(`${(bullish*100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
+    else if (bullish >= 0.70) { score += 14; signals.push(`${(bullish*100).toFixed(0)}% of analysts rate Buy/Strong Buy`) }
+    else if (bullish >= 0.55) { score += 7  }
+    else if (bullish < 0.30)  { score -= 5; signals.push('Weak analyst consensus — <30% Buy ratings') }
   }
 
-  // ── Factor 3: Revenue growth (0–25 pts) ───────────────────────────────────
+  // ── Factor 3: Earnings beat rate (0–20 pts) ───────────────────────────────
+  // Companies that consistently beat expectations demonstrate execution quality.
+  // Last 4 quarters: actual > estimate = beat.
+  if (earnings && earnings.length > 0) {
+    const valid = earnings.filter(e => e.actual != null && e.estimate != null)
+    if (valid.length >= 2) {
+      const beats = valid.filter(e => e.actual > e.estimate).length
+      const rate  = beats / valid.length
+      if      (rate === 1.0 && valid.length >= 3) { score += 20; signals.push(`Beat earnings estimates ${beats}/${valid.length} quarters`) }
+      else if (rate >= 0.75)                       { score += 14; signals.push(`Beat earnings estimates ${beats}/${valid.length} quarters`) }
+      else if (rate >= 0.50)                       { score += 7  }
+      else if (rate < 0.25 && valid.length >= 3)  { score -= 5; signals.push(`Missed earnings estimates ${valid.length - beats}/${valid.length} quarters`) }
+    }
+  }
+
+  // ── Factor 4: Revenue growth (0–18 pts) ───────────────────────────────────
   const revG = sanitiseGrowth(m.revenueGrowthTTMYoy ?? null, m.revenueGrowth3Y ?? null, { epsCap: 1.5 })
   if (revG != null) {
     const pct = revG * 100
-    if      (pct > 40) { score += 25; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY — hypergrowth`) }
-    else if (pct > 25) { score += 20; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
-    else if (pct > 15) { score += 14; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
-    else if (pct > 7)  { score += 8  }
-    else if (pct > 2)  { score += 3  }
+    if      (pct > 40) { score += 18; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY — hypergrowth`) }
+    else if (pct > 25) { score += 14; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 15) { score += 10; signals.push(`Revenue growth ${pct.toFixed(1)}% YoY`) }
+    else if (pct > 7)  { score += 5  }
+    else if (pct > 2)  { score += 2  }
     else if (pct < -5) { score -= 5  }
   }
 
-  // ── Factor 4: Gross margin — pricing power & scalability (0–12 pts) ───────
+  // ── Factor 5: Gross margin — pricing power & scalability (0–12 pts) ───────
   const margin = m.grossMarginTTM ?? null
   if (margin != null) {
     if      (margin > 70) { score += 12; signals.push(`Gross margin ${margin.toFixed(1)}% — exceptional pricing power`) }
     else if (margin > 55) { score += 9;  signals.push(`Gross margin ${margin.toFixed(1)}%`) }
     else if (margin > 40) { score += 5  }
     else if (margin > 25) { score += 2  }
-  }
-
-  // ── Factor 5: ROE — capital efficiency (0–8 pts) ──────────────────────────
-  const roe = m.roeAnnual ?? null
-  if (roe != null && roe > 0) {
-    if      (roe > 25) { score += 8; signals.push(`ROE ${roe.toFixed(1)}% — strong capital returns`) }
-    else if (roe > 15) { score += 5 }
-    else if (roe > 5)  { score += 2 }
   }
 
   return { score: Math.round(Math.max(0, score)), signals }
@@ -217,24 +237,24 @@ export async function getDailyPicks(forceRefresh = false) {
   }
 
   // ── Step 1: Fetch all data per stock in one sequential loop ──────────────────
-  // 4 calls per stock (metrics, quote, priceTarget, rec) in parallel, 4.5s gap.
-  // Rate budget: 4 × 22 = 88 calls over 22×4.5s ≈ 99s → ~53 calls/min ✓
-  // Quote replaces candles — candles returned empty arrays for all tickers,
-  // causing all momentum/price signals to be null.
+  // 5 calls per stock (metrics, quote, earnings, rec + spare) in parallel, 5.5s gap.
+  // Rate budget: 5 × 22 = 110 calls over 22×5.5s = 121s → ~54 calls/min ✓ (limit: 60/min)
+  // priceTarget dropped — targetMean always null on Finnhub free tier.
+  // earnings added — consistent earnings beats are a reliable execution signal.
   const stockData = []
   for (const stock of UNIVERSE) {
     try {
-      const [metrics, currentPrice, priceTarget, rec] = await Promise.all([
+      const [metrics, currentPrice, earnings, rec] = await Promise.all([
         fetchMetrics(stock.ticker),
         fetchQuote(stock.ticker),
-        fetchPriceTarget(stock.ticker),
+        fetchEarnings(stock.ticker),
         fetchRecommendation(stock.ticker),
       ])
       if (Object.keys(metrics).length > 5 || currentPrice) {
-        stockData.push({ ...stock, metrics, currentPrice, priceTarget, rec })
+        stockData.push({ ...stock, metrics, currentPrice, earnings, rec })
       }
     } catch { /* silently skip */ }
-    await sleep(4500)
+    await sleep(5500)
   }
 
   if (stockData.length === 0) {
@@ -243,7 +263,7 @@ export async function getDailyPicks(forceRefresh = false) {
 
   // ── Step 2: Score all stocks ──────────────────────────────────────────────
   const scored = stockData.map(stock => {
-    const { score, signals } = scoreStock(stock)
+    const { score, signals } = scoreStock({ metrics: stock.metrics, currentPrice: stock.currentPrice, earnings: stock.earnings, rec: stock.rec })
     const confidence = deriveConfidence(score, signals.length)
     console.log(`[picks] ${stock.ticker}: score=${score} signals=${signals.join(' | ')}`)
     return { ...stock, score, signals, confidence }
@@ -266,14 +286,22 @@ export async function getDailyPicks(forceRefresh = false) {
     const roe    = m.roeAnnual               != null ? m.roeAnnual.toFixed(1)               : 'N/A'
     const de     = m.totalDebtToEquityAnnual != null ? m.totalDebtToEquityAnnual.toFixed(2) : 'N/A'
     const evE    = m.evEbitdaTTM             != null ? m.evEbitdaTTM.toFixed(1)             : 'N/A'
-    const upside = s.priceTarget?.targetMean && s.currentPrice
-      ? ((s.priceTarget.targetMean / s.currentPrice - 1) * 100).toFixed(1) + '%'
-      : 'N/A'
     const buyRatio = (() => {
       const r = s.rec
       if (!r?.strongBuy && !r?.buy) return 'N/A'
       const total = (r.strongBuy||0)+(r.buy||0)+(r.hold||0)+(r.sell||0)+(r.strongSell||0)
       return total > 0 ? ((((r.strongBuy||0)+(r.buy||0))/total)*100).toFixed(0)+'%' : 'N/A'
+    })()
+    const hi52 = s.metrics['52WeekHigh']
+    const lo52 = s.metrics['52WeekLow']
+    const rangePos = (hi52 && lo52 && s.currentPrice && hi52 > lo52)
+      ? ((s.currentPrice - lo52) / (hi52 - lo52) * 100).toFixed(0) + '%'
+      : 'N/A'
+    const earningsBeat = (() => {
+      const e = (s.earnings || []).filter(q => q.actual != null && q.estimate != null)
+      if (e.length < 2) return 'N/A'
+      const beats = e.filter(q => q.actual > q.estimate).length
+      return `${beats}/${e.length} beats`
     })()
 
     return `
@@ -282,12 +310,13 @@ Signals: ${s.signals.join(' | ')}
 Valuation:  P/E ${pe != null ? pe.toFixed(1)+'x' : 'N/A'} | EV/EBITDA ${evE}x | Current price $${s.currentPrice?.toFixed(2) ?? 'N/A'}
 Growth:     Revenue YoY ${revG}% | EPS YoY ${epsG}%
 Quality:    Gross margin ${margin}% | ROE ${roe}% | D/E ${de}x
-Analysts:   Mean target $${s.priceTarget?.targetMean?.toFixed(2) ?? 'N/A'} | Upside ${upside} | Buy ratio ${buyRatio}`
+Momentum:   52-week range position ${rangePos} | Earnings beats ${earningsBeat}
+Analysts:   Buy ratio ${buyRatio}`
   }).join('\n\n')
 
   const prompt = `You are a senior equity research analyst writing a daily quantitative brief. Today is ${today}.
 
-A long-term growth screening model ranked 22 high-growth US stocks on: Analyst Price Target Upside (35 pts), Analyst Buy Consensus (20 pts), Revenue Growth (25 pts), Gross Margin (12 pts), and ROE (8 pts). High P/E is not penalised — the goal is identifying stocks with the best chance of significant long-term appreciation. The top 3 highest-scoring stocks are shown below.
+A long-term growth screening model ranked 22 high-growth US stocks on: 52-Week Range Position (25 pts, measures trend/momentum), Analyst Buy Consensus (25 pts), Earnings Beat Rate (20 pts, execution quality), Revenue Growth (18 pts), and Gross Margin (12 pts). High P/E is not penalised — the goal is identifying stocks with the best chance of significant long-term appreciation. The top 3 highest-scoring stocks are shown below.
 
 YOUR TASK: Write a grounded analytical narrative for each stock focused on long-term growth potential. You MUST:
 - Cite specific numbers from the data (do not round aggressively — keep one decimal)
@@ -302,7 +331,7 @@ ${stockSummaries}
 Return raw JSON only (no markdown, no code fences):
 {
   "date": "${today}",
-  "methodology": "Long-term growth model: Analyst Upside + Buy Consensus + Revenue Growth + Gross Margin + ROE across 22 high-growth US stocks",
+  "methodology": "Long-term growth model: 52-Week Momentum + Analyst Consensus + Earnings Beat Rate + Revenue Growth + Gross Margin across 22 high-growth US stocks",
   "picks": [
     {
       "ticker": "TICKER",
@@ -329,8 +358,8 @@ Return raw JSON only (no markdown, no code fences):
         "grossMargin":    45.1,
         "roe":            22.3,
         "debtEquity":      0.4,
-        "rsi":            54.2,
-        "analystUpside":  12.5
+        "rsi":            null,
+        "analystUpside":  null
       }
     }
   ]
@@ -339,7 +368,7 @@ Return raw JSON only (no markdown, no code fences):
 Rules:
 - confidence must be one of: "low", "medium", "high"
 - gain20in1yr and return10in5yr: 50 = coin flip; scores above 70 require multiple strong signals; be conservative
-- keyMetrics: pe is the P/E ratio, evEbitda is EV/EBITDA, revenueGrowth/epsGrowth/grossMargin/roe are in %, debtEquity is the ratio, rsi is the RSI value, analystUpside is % upside to analyst mean target. Use null for any metric that was N/A in the data.`
+- keyMetrics: pe is the P/E ratio, evEbitda is EV/EBITDA, revenueGrowth/epsGrowth/grossMargin/roe are in %, debtEquity is the ratio, rsi and analystUpside are not available from this data source so set both to null. Use null for any metric that was N/A in the data.`
 
   const message = await anthropic.messages.create({
     model:      'claude-haiku-4-5',
